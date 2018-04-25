@@ -145,6 +145,7 @@ int pMode(int pin, byte mode) {
 }
 
 
+void check_function() __attribute__((weak));
 void check_function() { 
   asm volatile ("nop\n\t");
 }
