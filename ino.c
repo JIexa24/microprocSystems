@@ -103,6 +103,46 @@ int dWrite(int pin, bool mode) {
   return 0;
 }
 
+int dRead(int pin) {
+  int level = 0;
+  if (P_D0_T <= pin && pin <= P_D7_T) {
+    level = PORTCHECK(PIND, pin);
+    if (level == 1) {  
+      return HIGH;
+    } else if (level == 0) {  
+      return LOW;
+    }
+  } else if (P_D8_T <= pin && pin <= P_D13_T) {
+    level = PORTCHECK(PINB, pin - 8);
+    if (level == 1) {  
+      return HIGH;
+    } else if (level == 0) {  
+      return LOW;
+    }
+  } else if (P_A0_T <= pin && pin <= P_A5_T) {
+    level = PORTCHECK(PINC, pin - 14);
+    if (level == 1) {  
+      return HIGH;
+    } else if (level == 0) {  
+      return LOW;
+    }
+  } else {
+    return LOW;
+  }
+}
+
+int portRead(int port) {
+  if (P_D0_T <= pin && pin <= P_D7_T) {
+    return PIND;
+  } else if (P_D8_T <= pin && pin <= P_D13_T) {
+    return PINB;
+  } else if (P_A0_T <= pin && pin <= P_A5_T) {
+    return PINC;
+  } else {
+    return -1;
+  }
+}
+
 int pMode(int pin, byte mode) {
   char SREG_tmp = SREG;
   noInt();
@@ -182,7 +222,6 @@ void del(unsigned long int time) {
 #define PCINT2_DIS(X) PORTCLEAR(PCICR, 2)
 
 ISR(PCINT2_vect) {
-     
     if (PORTCHECK(PIND, PD0)) {/* Pin D0 interrupt*/}
     if (PORTCHECK(PIND, PD1)) {/* Pin D1 interrupt*/}
     if (PORTCHECK(PIND, PD2)) {/* Pin D2 interrupt*/}
