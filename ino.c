@@ -131,17 +131,10 @@ int dRead(int pin) {
   }
 }
 
-int portRead(int port) {
-  if (port == PORTD) {
-    return PIND;
-  } else if (port == PORTB) {
-    return PINB;
-  } else if (port == PORTC) {
-    return PINC;
-  } else {
-    return -1;
-  }
-}
+
+#define readPortB() PINB
+#define readPortD() PIND
+#define readPortC() PINC
 
 int pMode(int pin, byte mode) {
   char SREG_tmp = SREG;
