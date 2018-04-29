@@ -135,6 +135,18 @@ int dRead(int pin) {
 #define readPortB() PINB
 #define readPortD() PIND
 #define readPortC() PINC
+int readPortFromPin(int pin) {
+  int level = 0;
+  if (P_D0_T <= pin && pin <= P_D7_T) {
+    return PIND;
+  } else if (P_D8_T <= pin && pin <= P_D13_T) {
+    return PINB;
+  } else if (P_A0_T <= pin && pin <= P_A5_T) {
+    return PINC;
+  } else {
+    return -1;
+  }
+}
 
 int pMode(int pin, byte mode) {
   char SREG_tmp = SREG;
