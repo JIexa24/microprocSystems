@@ -132,11 +132,11 @@ int dRead(int pin) {
 }
 
 int portRead(int port) {
-  if (P_D0_T <= pin && pin <= P_D7_T) {
+  if (port == PORTD) {
     return PIND;
-  } else if (P_D8_T <= pin && pin <= P_D13_T) {
+  } else if (port == PORTB) {
     return PINB;
-  } else if (P_A0_T <= pin && pin <= P_A5_T) {
+  } else if (port == PORTC) {
     return PINC;
   } else {
     return -1;
