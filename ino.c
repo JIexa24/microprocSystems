@@ -483,7 +483,7 @@ void offPWM(int pin) {
 // Overflow Timing in microseconds
 #define FREQ_TO_MS(X) ( (X) / FREQ_PER_MS() )
 // Count to overflow
-#define COUNT_TIMER1 ( 256 )
+#define COUNT_TIMER1 ( 255 )
 
 // 1.024 milliseconds to overflow
 #define MICROSECONDS_PER_TIMER1_OVERFLOW (FREQ_TO_MS(64 * COUNT_TIMER1 )) 
