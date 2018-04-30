@@ -224,7 +224,41 @@ void del(unsigned long int time) {
                        PCMSK2 = X & 0xFF; }
 #define PCINT0_DIS() PORTCLEAR(PCICR, 0)
 #define PCINT1_DIS() PORTCLEAR(PCICR, 1)
-#define PCINT2_DIS(X) PORTCLEAR(PCICR, 2)
+#define PCINT2_DIS() PORTCLEAR(PCICR, 2)
+
+//ECICR - external change interrupt control register(17.2.1)
+
+#define INT0_EN_LOW() { PORTCLEAR(ECICR, 0); \
+                        PORTCLEAR(ECICR, 1); \
+                        PORTSET(EIMSK, 0);   }
+#define INT1_EN_LOW() { PORTCLEAR(ECICR, 2); \
+                        PORTCLEAR(ECICR, 3); \
+                        PORTSET(EIMSK, 1);   }
+
+#define INT0_EN_LOG() { PORTSET(ECICR, 0);   \
+                        PORTCLEAR(ECICR, 1); \
+                        PORTSET(EIMSK, 0);   }
+#define INT1_EN_LOG() { PORTSET(ECICR, 2);   \
+                        PORTCLEAR(ECICR, 3); \
+                        PORTSET(EIMSK, 1);   }
+
+#define INT0_EN_FALL() { PORTCLEAR(ECICR, 0); \
+                         PORTSET(ECICR, 1);   \
+                         PORTSET(EIMSK, 0);   }
+#define INT1_EN_FALL() { PORTCLEAR(ECICR, 2); \
+                         PORTSET(ECICR, 3);   \
+                         PORTSET(EIMSK, 1);   }
+
+
+#define INT0_EN_RISE() { PORTSET(ECICR, 0); \
+                         PORTSET(ECICR, 1); \
+                         PORTSET(EIMSK, 0); }
+#define INT1_EN_RISE() { PORTSET(ECICR, 2); \
+                         PORTSET(ECICR, 3); \
+                         PORTSET(EIMSK, 1); }
+
+#define PCINT0_DIS() PORTCLEAR(EIMSK, 0)
+#define PCINT1_DIS() PORTCLEAR(EIMSK, 1)
 
 ISR(PCINT2_vect) {
     if (PORTCHECK(PIND, PD0)) {/* Pin D0 interrupt*/}
