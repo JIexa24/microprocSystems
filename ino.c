@@ -264,9 +264,8 @@ void del(unsigned long int time) {
 #define TIMER1_OVF_EN() { PORTSET(TIMSK1, 0); }
 #define TIMER1_OVF_DIS() PORTCLEAR(TIMSK1, 0)
 
-volatile int u = 0;
 ISR(INT0_vect) {
-  u = ~u;
+
 }
 
 ISR(INT1_vect) {
