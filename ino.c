@@ -304,12 +304,12 @@ ISR(PCINT1_vect) {
 
 
 int pin_Arduino_Nano_3_0_to_timer(int PIN) { 
-  if (PIN == P_D3_T) return TIMER2B;
-  else if (PIN == P_D5_T) return TIMER0B;
-  else if (PIN == P_D6_T) return TIMER0A;
-  else if (PIN == P_D9_T) return TIMER1A;
-  else if (PIN == P_D10_T) return TIMER1B;
-  else if (PIN == P_D11_T) return TIMER2A;
+  if (PIN == PWM_PIN1) return TIMER2B;
+  else if (PIN == PWM_PIN2) return TIMER0B;
+  else if (PIN == PWM_PIN3) return TIMER0A;
+  else if (PIN == PWM_PIN4) return TIMER1A;
+  else if (PIN == PWM_PIN5) return TIMER1B;
+  else if (PIN == PWM_PIN6) return TIMER2A;
   else return NOT_ON_TIMER;
 }
         
