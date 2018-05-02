@@ -360,8 +360,8 @@ void PWM_init() {
   ICR = 639; //MAX VALUE
   */
   /* Iint prescaler(table 19-10) clk/64 */
-  PORTSET(TCCR1B, CS00);
-  PORTSET(TCCR1B, CS01);
+  PORTSET(TCCR1B, CS10);
+  PORTSET(TCCR1B, CS11);
   /*cs210
     000 - stop timer
     001 - 1:1
@@ -376,7 +376,7 @@ void PWM_init() {
   TCCR2A = 0;
   TCCR2B = 0;
   /*init regime 1 for 2 timer (Phase-correct PWM 8-bit to 0xFF)(table 22-9)*/
-  PORTSET(TCCR2A, WGM10);
+  PORTSET(TCCR2A, WGM20);
 
   /*init regime 3 for 2 timer (Fast PWM 8-bit to 0xFF(BOTTOM))(table 20-6)*/
   /*
@@ -384,7 +384,7 @@ void PWM_init() {
   PORTSET(TCCR2A, WGM21);
   */
   /* Iint prescaler(table 22-10) clk/64 */
-  PORTSET(TCCR2B, CS02);
+  PORTSET(TCCR2B, CS22);
   /*cs210
     000 - stop timer
     001 - 1:1
