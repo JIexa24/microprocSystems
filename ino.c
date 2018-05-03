@@ -475,22 +475,21 @@ void offPWM(int pin) {
     break;
   }
 }
-
 #define FREQ_CORE F_CPU
 // Count of 1 microseconds ~1/16microsec
 #define FREQ_PER_MS() ( FREQ_CORE / 1000000UL )
 // Overflow Timing in microseconds
 #define FREQ_TO_MS(X) ( (X) / FREQ_PER_MS() )
 // Count to overflow
-#define COUNT_TIMER1 ( 255 )
+#define COUNT_TIMER1 ( 256 )
 
 // 1.024 milliseconds to overflow
 #define MICROSECONDS_PER_TIMER1_OVERFLOW (FREQ_TO_MS(64 * COUNT_TIMER1 )) 
-// * 2 because magic (?)
-#define MILLISECONDS_INCREMENT (MICROSECONDS_PER_TIMER1_OVERFLOW * 2 / 1000)
+
+#define MILLISECONDS_INCREMENT (MICROSECONDS_PER_TIMER1_OVERFLOW / 1000)
 
 // 0.024 - eps. If 1000 microseconds -> 1111101000 >> 3 = 125. 1 byte
-#define OVERFLOW_FIX_INCREMENT ((MICROSECONDS_PER_TIMER1_OVERFLOW * 2 % 1000) >> 3)
+#define OVERFLOW_FIX_INCREMENT ((MICROSECONDS_PER_TIMER1_OVERFLOW % 1000) >> 3)
 #define OWF_MAX (1000 >> 3)
 
 volatile unsigned long milliseconds_timer1 = 0;
@@ -500,7 +499,7 @@ volatile unsigned long timer1 = 0;
 ISR(TIMER1_OVF_vect){
   unsigned long lm = milliseconds_timer1;
   unsigned char lf = fmilliseconds_timer1;
-
+  TCNT1 = 255;
   lm += MILLISECONDS_INCREMENT;
   lf += OVERFLOW_FIX_INCREMENT;
   if (lf >= OWF_MAX) {
