@@ -484,12 +484,12 @@ void offPWM(int pin) {
 #define COUNT_TIMER1 ( 256 )
 
 // 1.024 milliseconds to overflow
-#define MICROSECONDS_PER_TIMER1_OVERFLOW (FREQ_TO_MS(64 * COUNT_TIMER1 )) 
+#define MS_TIMER1_OVERFLOW (FREQ_TO_MS(64 * COUNT_TIMER1 )) 
 
-#define MILLISECONDS_INCREMENT (MICROSECONDS_PER_TIMER1_OVERFLOW / 1000)
+#define MILLISECONDS_INCREMENT (MS_TIMER1_OVERFLOW / 1000)
 
 // 0.024 - eps. If 1000 microseconds -> 1111101000 >> 3 = 125. 1 byte
-#define OVERFLOW_FIX_INCREMENT ((MICROSECONDS_PER_TIMER1_OVERFLOW % 1000) >> 3)
+#define OVERFLOW_FIX_INCREMENT ((MS_TIMER1_OVERFLOW % 1000) >> 3)
 #define OWF_MAX (1000 >> 3)
 
 volatile unsigned long milliseconds_timer1 = 0;
@@ -521,4 +521,9 @@ unsigned long milliseconds()
   SREG = SREG_tmp;
 
   return lm;
+}
+
+void delayMillis(unsigned long int mil) {
+  unsigned long int a = milliseconds();
+  while (milliseconds() - a < mil);
 }

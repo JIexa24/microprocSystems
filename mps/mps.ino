@@ -264,6 +264,9 @@ void del(unsigned long int time) {
 #define TIMER1_OVF_EN() { PORTSET(TIMSK1, 0); }
 #define TIMER1_OVF_DIS() PORTCLEAR(TIMSK1, 0)
 
+#define TIMER2_COMPA_EN() { PORTSET(TIMSK2, 1); }
+#define TIMER2_COMPA_DIS() PORTCLEAR(TIMSK2, 1)
+
 volatile int u = 0;
 volatile int u1 = 0;
 
@@ -341,7 +344,7 @@ void PWM_init() {
   /*----------------------------------------------*/
   TCCR1A = 0;
   TCCR1B = 0;
-  TCNT1 = 0; // low barrier
+  TCNT1 = 255; // low barrier
   ICR1 = 255;// up barrier
   /*init regime 1 for 1 timer (Phase-correct PWM 8-bit to 0xFF)(table 20-6)*/
   PORTSET(TCCR1A, WGM10);
@@ -381,11 +384,15 @@ void PWM_init() {
   /*init regime 1 for 2 timer (Phase-correct PWM 8-bit to 0xFF)(table 22-9)*/
   PORTSET(TCCR2A, WGM20);
 
-  /*init regime 3 for 2 timer (Fast PWM 8-bit to 0xFF(BOTTOM))(table 20-6)*/
+  /*init regime 3 for 2 timer (Fast PWM 8-bit to 0xFF(BOTTOM))(table )*/
   /*
   PORTSET(TCCR2A, WGM20);
   PORTSET(TCCR2A, WGM21);
   */
+  
+  /*init regime 2 for 2 timer */
+ // PORTSET(TCCR2A, WGM21);
+ 
   /* Iint prescaler(table 22-10) clk/64 */
   PORTSET(TCCR2B, CS22);
   /*cs210
@@ -478,31 +485,34 @@ void offPWM(int pin) {
     break;
   }
 }
+
 #define FREQ_CORE F_CPU
 // Count of 1 microseconds ~1/16microsec
 #define FREQ_PER_MS() ( FREQ_CORE / 1000000UL )
 // Overflow Timing in microseconds
 #define FREQ_TO_MS(X) ( (X) / FREQ_PER_MS() )
 // Count to overflow
-#define COUNT_TIMER1 ( 256 )
+#define COUNT_TIMER1 ( 250 )
 
 // 1.024 milliseconds to overflow
-#define MICROSECONDS_PER_TIMER1_OVERFLOW (FREQ_TO_MS(64 * COUNT_TIMER1 )) 
+#define MS_TIMER1_OVERFLOW (FREQ_TO_MS(64 * COUNT_TIMER1 )) 
 
-#define MILLISECONDS_INCREMENT (MICROSECONDS_PER_TIMER1_OVERFLOW / 1000)
+#define MILLISECONDS_INCREMENT (MS_TIMER1_OVERFLOW / 1000)
 
 // 0.024 - eps. If 1000 microseconds -> 1111101000 >> 3 = 125. 1 byte
-#define OVERFLOW_FIX_INCREMENT ((MICROSECONDS_PER_TIMER1_OVERFLOW % 1000) >> 3)
-#define OWF_MAX (1000 >> 3)
+#define OVERFLOW_FIX_INCREMENT ((MS_TIMER1_OVERFLOW % 1000))
+#define OWF_MAX (1000)
 
 volatile unsigned long milliseconds_timer1 = 0;
-volatile unsigned char fmilliseconds_timer1 = 0;
+volatile unsigned int fmilliseconds_timer1 = 0;
 volatile unsigned long timer1 = 0;
 
+/*
 ISR(TIMER1_OVF_vect){
   unsigned long lm = milliseconds_timer1;
-  unsigned char lf = fmilliseconds_timer1;
-  TCNT1 = 255;
+  unsigned int lf = fmilliseconds_timer1;
+  TCNT1L = (COUNT_TIMER1 - 1) & 0xFF;
+  TCNT1H = ((COUNT_TIMER1 - 1) >> 8 )& 0xFF;
   lm += MILLISECONDS_INCREMENT;
   lf += OVERFLOW_FIX_INCREMENT;
   if (lf >= OWF_MAX) {
@@ -513,7 +523,22 @@ ISR(TIMER1_OVF_vect){
   milliseconds_timer1 = lm;
   ++timer1;
 }
+*/
 
+ISR(TIMER2_COMPA_vect){
+  unsigned long lm = milliseconds_timer1;
+  unsigned int lf = fmilliseconds_timer1;
+
+  lm += MILLISECONDS_INCREMENT;
+  lf += OVERFLOW_FIX_INCREMENT;
+  if (lf >= OWF_MAX) {
+    lf -= OWF_MAX;
+ //   ++lm;
+  }
+  fmilliseconds_timer1 = lf;
+  milliseconds_timer1 = lm;
+  ++timer1;
+}
 
 unsigned long milliseconds()
 {
@@ -525,6 +550,11 @@ unsigned long milliseconds()
   SREG = SREG_tmp;
 
   return lm;
+}
+
+void delayMillis(unsigned long int mil) {
+  unsigned long int a = milliseconds();
+  while (milliseconds() - a <= mil);
 }
 
 void test_dWrite_pMode() {
@@ -697,19 +727,39 @@ void test_matrix_keyboard() {
 }
 
 void setup() {
-  // put your setup code here, to run once:
+  int  i = 0;
   yesInt();
-  TIMER1_OVF_EN()
+  OCR2A = COUNT_TIMER1 - 1;
+  TIMER2_COMPA_EN(); 
+  pMode(P_D3_T,OUTPUT);
+  pMode(P_D5_T,OUTPUT);
+  pMode(P_D6_T,OUTPUT);
+  pMode(P_D9_T,OUTPUT);
+  pMode(P_D10_T,OUTPUT);
+  pMode(P_D11_T,OUTPUT);
   
   char buf[80];
   Serial.begin(9600);
   PWM_init();
-  
+
   delay(500);
+//  delayMillis(500);
   Serial.println(milliseconds());
   Serial.println(millis());
+  delayMillis(5000);
+  Serial.println(milliseconds());
+  Serial.println(millis());
+
   pMode(P_D13_T,OUTPUT);
-  
+  dWrite(P_D13_T, HIGH);
+  delayMillis(1000);
+  dWrite(P_D13_T, LOW);
+  delayMillis(1000);
+  dWrite(P_D13_T, HIGH);
+  delayMillis(1000);
+  dWrite(P_D13_T, LOW);
+  delayMillis(1000);
+
 //  test_dWrite_pMode();
 //  test_ISR_012();;
 //  test_ISR_int01();
@@ -719,4 +769,5 @@ void setup() {
 }
 
 void loop() {  
+
 }
