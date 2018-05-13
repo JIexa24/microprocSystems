@@ -382,7 +382,7 @@ void PWM_init() {
   TCCR2A = 0;
   TCCR2B = 0;
   /*init regime 1 for 2 timer (Phase-correct PWM 8-bit to 0xFF)(table 22-9)*/
-  PORTSET(TCCR2A, WGM20);
+  //PORTSET(TCCR2A, WGM20);
 
   /*init regime 3 for 2 timer (Fast PWM 8-bit to 0xFF(BOTTOM))(table )*/
   /*
@@ -391,17 +391,19 @@ void PWM_init() {
   */
   
   /*init regime 2 for 2 timer */
- // PORTSET(TCCR2A, WGM21);
+  PORTSET(TCCR2A, WGM21);
  
   /* Iint prescaler(table 22-10) clk/64 */
   PORTSET(TCCR2B, CS22);
+  /* Iint prescaler clk/1 */
+  //PORTSET(TCCR2B, CS20);
   /*cs210
     000 - stop timer
     001 - 1:1
     010 - 1:8
     011 - 1:32
     100 - 1:64
-    101 - 1:228
+    101 - 1:128
     110 - 1:256
     111 - 1:1024
   */ 
@@ -521,22 +523,10 @@ ISR(TIMER1_OVF_vect){
   }
   fmilliseconds_timer1 = lf;
   milliseconds_timer1 = lm;
-  ++timer1;
 }
 */
 
 ISR(TIMER2_COMPA_vect){
-  unsigned long lm = milliseconds_timer1;
-  unsigned int lf = fmilliseconds_timer1;
-
-  lm += MILLISECONDS_INCREMENT;
-  lf += OVERFLOW_FIX_INCREMENT;
-  if (lf >= OWF_MAX) {
-    lf -= OWF_MAX;
- //   ++lm;
-  }
-  fmilliseconds_timer1 = lf;
-  milliseconds_timer1 = lm;
   ++timer1;
 }
 
@@ -729,8 +719,9 @@ void test_matrix_keyboard() {
 void setup() {
   int  i = 0;
   yesInt();
-  OCR2A = COUNT_TIMER1 - 1;
-  TIMER2_COMPA_EN(); 
+  TIMER2_COMPA_EN();
+  OCR2A=250;
+  PWM_init(); 
   pMode(P_D3_T,OUTPUT);
   pMode(P_D5_T,OUTPUT);
   pMode(P_D6_T,OUTPUT);
@@ -740,16 +731,17 @@ void setup() {
   
   char buf[80];
   Serial.begin(9600);
-  PWM_init();
 
   delay(500);
+   Serial.println(timer1);
+    Serial.println(CS20);
 //  delayMillis(500);
-  Serial.println(milliseconds());
-  Serial.println(millis());
-  delayMillis(5000);
-  Serial.println(milliseconds());
-  Serial.println(millis());
-
+//  Serial.println(milliseconds());
+//  Serial.println(millis());
+//  delayMillis(5000);
+//  Serial.println(milliseconds());
+//  Serial.println(millis());
+/*
   pMode(P_D13_T,OUTPUT);
   dWrite(P_D13_T, HIGH);
   delayMillis(1000);
@@ -759,7 +751,7 @@ void setup() {
   delayMillis(1000);
   dWrite(P_D13_T, LOW);
   delayMillis(1000);
-
+*/
 //  test_dWrite_pMode();
 //  test_ISR_012();;
 //  test_ISR_int01();
