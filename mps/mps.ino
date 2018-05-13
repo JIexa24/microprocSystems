@@ -688,10 +688,6 @@ void test_matrix_keyboard() {
   int i = 0;
   int j = 0;
   int readval = 0;
-  for (i = P_D8_T; i <= P_D13_T;++i) {
-  pMode(i, OUTPUT);
-  dWrite(i, LOW);
-  }
   
   for (i = STARTKEYR; i <= ENDKEYR ;++i) {
   pMode(i, INPUT);
