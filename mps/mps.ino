@@ -307,6 +307,10 @@ ISR(PCINT1_vect) {
     if (PORTCHECK(PINC, PC5)) {/* Pin A5 interrupt*/}
 }
 
+void INT_init() {
+  TIMER1_OVF_EN();
+  TIMER2_COMPA_EN();
+}
 
 int pin_Arduino_Nano_3_0_to_timer(int PIN) { 
   if (PIN == PWM_PIN1) return TIMER2B;
@@ -494,27 +498,25 @@ void offPWM(int pin) {
 // Overflow Timing in microseconds
 #define FREQ_TO_MS(X) ( (X) / FREQ_PER_MS() )
 // Count to overflow
-#define COUNT_TIMER1 ( 250 )
+#define COUNT_TIMER1 ( 256 )
+#define COUNT_TIMER ( 250 )
 
 // 1.024 milliseconds to overflow
 #define MS_TIMER1_OVERFLOW (FREQ_TO_MS(64 * COUNT_TIMER1 )) 
 
-#define MILLISECONDS_INCREMENT (MS_TIMER1_OVERFLOW / 1000)
+#define MILLISECONDS_INCREMENT (MS_TIMER1_OVERFLOW * 2/ 1000)
 
 // 0.024 - eps. If 1000 microseconds -> 1111101000 >> 3 = 125. 1 byte
-#define OVERFLOW_FIX_INCREMENT ((MS_TIMER1_OVERFLOW % 1000))
-#define OWF_MAX (1000)
+#define OVERFLOW_FIX_INCREMENT ((MS_TIMER1_OVERFLOW * 2 % 1000) >> 3)
+#define OWF_MAX (1000 >> 3) 
 
 volatile unsigned long milliseconds_timer1 = 0;
 volatile unsigned int fmilliseconds_timer1 = 0;
 volatile unsigned long timer1 = 0;
 
-/*
 ISR(TIMER1_OVF_vect){
   unsigned long lm = milliseconds_timer1;
   unsigned int lf = fmilliseconds_timer1;
-  TCNT1L = (COUNT_TIMER1 - 1) & 0xFF;
-  TCNT1H = ((COUNT_TIMER1 - 1) >> 8 )& 0xFF;
   lm += MILLISECONDS_INCREMENT;
   lf += OVERFLOW_FIX_INCREMENT;
   if (lf >= OWF_MAX) {
@@ -524,9 +526,9 @@ ISR(TIMER1_OVF_vect){
   fmilliseconds_timer1 = lf;
   milliseconds_timer1 = lm;
 }
-*/
 
 ISR(TIMER2_COMPA_vect){
+  OCR2A=COUNT_TIMER - 1;
   ++timer1;
 }
 
@@ -719,9 +721,8 @@ void test_matrix_keyboard() {
 void setup() {
   int  i = 0;
   yesInt();
-  TIMER2_COMPA_EN();
-  OCR2A=250;
-  PWM_init(); 
+  PWM_init();
+  INT_init(); 
   pMode(P_D3_T,OUTPUT);
   pMode(P_D5_T,OUTPUT);
   pMode(P_D6_T,OUTPUT);
@@ -733,11 +734,10 @@ void setup() {
   Serial.begin(9600);
 
   delay(500);
-   Serial.println(timer1);
-    Serial.println(CS20);
+  Serial.println(timer1);
+  Serial.println(milliseconds());
+  Serial.println(millis());
 //  delayMillis(500);
-//  Serial.println(milliseconds());
-//  Serial.println(millis());
 //  delayMillis(5000);
 //  Serial.println(milliseconds());
 //  Serial.println(millis());
@@ -757,7 +757,7 @@ void setup() {
 //  test_ISR_int01();
 //  test_PWM();
 //  test_dRead_portRead();
-//  test_matrix_keyboard();
+  test_matrix_keyboard();
 }
 
 void loop() {  
