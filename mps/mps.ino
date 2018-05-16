@@ -264,6 +264,9 @@ void del(unsigned long int time) {
 #define TIMER1_OVF_EN() { PORTSET(TIMSK1, 0); }
 #define TIMER1_OVF_DIS() PORTCLEAR(TIMSK1, 0)
 
+#define TIMER1_COMPA_EN() { PORTSET(TIMSK1, 1); }
+#define TIMER1_COMPA_DIS() PORTCLEAR(TIMSK1, 1)
+
 #define TIMER2_COMPA_EN() { PORTSET(TIMSK2, 1); }
 #define TIMER2_COMPA_DIS() PORTCLEAR(TIMSK2, 1)
 
@@ -308,8 +311,8 @@ ISR(PCINT1_vect) {
 }
 
 void INT_init() {
-  TIMER1_OVF_EN();
-  TIMER2_COMPA_EN();
+ // TIMER1_OVF_EN();
+  TIMER1_COMPA_EN();
 }
 
 int pin_Arduino_Nano_3_0_to_timer(int PIN) { 
@@ -348,10 +351,10 @@ void PWM_init() {
   /*----------------------------------------------*/
   TCCR1A = 0;
   TCCR1B = 0;
-  TCNT1 = 255; // low barrier
-  ICR1 = 255;// up barrier
+  //TCNT1 = 255; // low barrier
+  //ICR1 = 255;// up barrier
   /*init regime 1 for 1 timer (Phase-correct PWM 8-bit to 0xFF)(table 20-6)*/
-  PORTSET(TCCR1A, WGM10);
+  //PORTSET(TCCR1A, WGM10);
 
   /*init regime 2 for 1 timer (Phase-correct PWM 9-bit to 0x1FF)(table 20-6)*/
   /*
@@ -369,9 +372,13 @@ void PWM_init() {
   PORTSET(TCCR1B, WGM13);
   ICR = 639; //MAX VALUE
   */
+  PORTSET(TCCR1B, WGM12);
   /* Iint prescaler(table 19-10) clk/64 */
-  PORTSET(TCCR1B, CS10);
-  PORTSET(TCCR1B, CS11);
+    PORTSET(TCCR1B, CS10);
+    PORTSET(TCCR1B, CS11);
+
+  //PORTSET(TCCR1B, CS10);
+
   /*cs210
     000 - stop timer
     001 - 1:1
@@ -397,10 +404,12 @@ void PWM_init() {
   /*init regime 2 for 2 timer */
   PORTSET(TCCR2A, WGM21);
  
-  /* Iint prescaler(table 22-10) clk/64 */
-  PORTSET(TCCR2B, CS22);
+  /* Iint prescaler(table 22-10) clk/64 (For time func) */
+  //PORTSET(TCCR2B, CS22);
+  
   /* Iint prescaler clk/1 */
-  //PORTSET(TCCR2B, CS20);
+  PORTSET(TCCR2B, CS20);
+
   /*cs210
     000 - stop timer
     001 - 1:1
@@ -411,6 +420,66 @@ void PWM_init() {
     110 - 1:256
     111 - 1:1024
   */ 
+}
+
+volatile unsigned long int trigger_global = 0;
+/*Timer 2, pin 11*/
+void toneF(unsigned int freq, unsigned long int tm) {
+  unsigned char presc = 0x1;
+  unsigned long int freqForPresc = F_CPU / freq / 2 - 1;
+  unsigned long int trigger = -1;
+  if (freqForPresc > 255) { // 1
+    freqForPresc = F_CPU / freq / 2 / 8 - 1;
+    if (freqForPresc  > 255) { // 8
+      presc = 0x2;
+      freqForPresc = F_CPU / freq / 2 / 32 - 1;
+      if (freqForPresc  > 255) { // 32
+        presc = 0x3;
+        freqForPresc = F_CPU / freq / 2 / 64 - 1;
+        if (freqForPresc  > 255) { // 64
+          presc = 0x4;
+          freqForPresc = F_CPU / freq / 2 / 128 - 1;
+          if (freqForPresc  > 255) { // 128
+            presc = 0x5;
+            freqForPresc = F_CPU / freq / 2 / 256 - 1;
+            if (freqForPresc  > 255) { // 256
+              presc = 0x6;
+              freqForPresc = F_CPU / freq / 2 / 1024 - 1; 
+              if (freqForPresc  > 255) { // 1024
+                presc = 0x7;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  if (tm > 0) {
+    trigger = 2 * freq * (tm) / 1000; //millis
+  }
+  TCCR2B = TCCR2B & 0b11111000;
+  TCCR2B = TCCR2B | presc;
+  OCR2A = freqForPresc ;
+  trigger_global = trigger;
+  unsigned long int starttime = millis();
+  Serial.println("--------------------");
+  Serial.println(freq);
+  Serial.println(presc);
+  Serial.println(freqForPresc);
+  Serial.println(trigger_global);
+  TIMER2_COMPA_EN();
+  while (millis() - starttime < tm + 5);
+}
+volatile int mask = 0b00001000;
+ISR(TIMER2_COMPA_vect) {
+  if (trigger_global > 0) {
+    // toggle the pin
+    PORTB ^= mask;
+    trigger_global--;
+  } else if (trigger_global-- == 0){
+    PORTCLEAR(PORTB, 4);
+    TIMER2_COMPA_DIS();
+  }
 }
 
 void onPWM(int pin, int val) {
@@ -499,7 +568,7 @@ void offPWM(int pin) {
 #define FREQ_TO_MS(X) ( (X) / FREQ_PER_MS() )
 // Count to overflow
 #define COUNT_TIMER1 ( 256 )
-#define COUNT_TIMER ( 250 )
+#define COUNT_TIMER ( 240 )
 
 // 1.024 milliseconds to overflow
 #define MS_TIMER1_OVERFLOW (FREQ_TO_MS(64 * COUNT_TIMER1 )) 
@@ -527,8 +596,8 @@ ISR(TIMER1_OVF_vect){
   milliseconds_timer1 = lm;
 }
 
-ISR(TIMER2_COMPA_vect){
-  OCR2A=COUNT_TIMER - 1;
+ISR(TIMER1_COMPA_vect){
+  OCR1A=COUNT_TIMER - 1;
   ++timer1;
 }
 
@@ -538,7 +607,8 @@ unsigned long milliseconds()
   char SREG_tmp = SREG;
 
   cli();
-  lm = milliseconds_timer1;
+  //lm = milliseconds_timer1;
+  lm = timer1 * 2;
   SREG = SREG_tmp;
 
   return lm;
@@ -667,11 +737,11 @@ void test_dRead_portRead() {
 
 void test_ISR_int01() {
   pMode(INT0_PIN, INPUT);
+  pMode(P_D13_T, OUTPUT);
 
   dWrite(P_D13_T, LOW);
   INT0_EN_LOG();    
   while(u1 == 0);
-  pMode(P_D13_T, OUTPUT);
   dWrite(P_D13_T, HIGH);
   u1 = 0;
   del(1000);
@@ -680,21 +750,21 @@ void test_ISR_int01() {
 
 #define COUNT_ROW 3
 #define COUNT_COL 2
-#define STARTKEYW P_D4_T  
-#define ENDKEYW P_D6_T  
-#define STARTKEYR P_D2_T  
-#define ENDKEYR P_D3_T  
+#define STARTKEYW P_D6_T  
+#define ENDKEYW P_D8_T  
+#define STARTKEYR P_D4_T  
+#define ENDKEYR P_D5_T  
 void test_matrix_keyboard() {
   int i = 0;
   int j = 0;
   int readval = 0;
   
   for (i = STARTKEYR; i <= ENDKEYR ;++i) {
-  pMode(i, INPUT);
+    pMode(i, INPUT);
   }
 
   for (i = STARTKEYW; i <= ENDKEYW ;++i) {
-  pMode(i, OUTPUT);
+    pMode(i, OUTPUT);
   }
 
   while(1) {
@@ -707,13 +777,14 @@ void test_matrix_keyboard() {
         readval = dRead(STARTKEYR + j);
         if (readval == LOW) {
           Serial.println(i*(COUNT_ROW - 1) + j);
+          //toneF(440, 10000);
         }
       }
     }
   }
-  
 }
 
+#define TACT 1000
 void setup() {
   int  i = 0;
   yesInt();
@@ -731,8 +802,84 @@ void setup() {
 
   delay(500);
   Serial.println(timer1);
+  Serial.println(milliseconds_timer1);
   Serial.println(milliseconds());
   Serial.println(millis());
+  /*
+  toneF(587, TACT * 3 / 4);
+  toneF(659, TACT / 4);
+  
+  toneF(698, TACT);
+
+  toneF(880, TACT * 3 / 8);
+  toneF(784, TACT * 3 / 8);
+  toneF(880, TACT / 4);
+  
+  toneF(523, TACT);
+
+  toneF(587, TACT * 3 / 4);
+  toneF(659, TACT / 4);
+
+  toneF(698, TACT / 2);
+  toneF(659, TACT / 2);
+
+  toneF(784, TACT / 2);
+  toneF(880, TACT / 2);
+  
+  toneF(784, TACT / 2);
+  toneF(698, TACT / 2);
+
+  del(TACT / 4);
+  toneF(698, TACT / 4);
+  toneF(698, TACT / 4);
+  toneF(698, TACT / 4);
+  
+  toneF(880, TACT / 4);
+  toneF(880, TACT / 4);
+  toneF(784, TACT / 4);
+  toneF(698, TACT / 4);
+
+  del(TACT / 4);
+  toneF(880, TACT / 4);
+  toneF(880, TACT / 4);
+  toneF(880, TACT / 4);
+  
+  toneF(784, TACT / 4);
+  toneF(880, TACT / 4);
+  toneF(784, TACT / 4);
+  toneF(698, TACT / 4);
+  
+  del(TACT / 4);
+  toneF(698, TACT / 4);
+  toneF(698, TACT / 4);
+  toneF(698, TACT / 4);
+  
+  toneF(880, TACT / 4);
+  toneF(880, TACT / 4);
+  toneF(784, TACT / 4);
+  toneF(698, TACT / 4);
+
+  del(TACT / 4);
+  toneF(880, TACT / 4);
+  toneF(880, TACT / 4);
+  toneF(880, TACT / 4);*/
+  /*
+  del(TACT / 4);
+  toneF(1108, TACT / 4);
+  toneF(1108, TACT / 4);
+  toneF(1108, TACT / 4);
+/*
+  del(TACT / 4);
+  toneF(174, TACT / 4);
+  toneF(174, TACT / 4);
+  toneF(174, TACT / 4);
+  
+  toneF(220, TACT / 4);
+  toneF(220, TACT / 4);
+  toneF(196, TACT / 4);
+  toneF(174, TACT / 4);
+  */ 
+
 //  delayMillis(500);
 //  delayMillis(5000);
 //  Serial.println(milliseconds());
@@ -750,12 +897,13 @@ void setup() {
 */
 //  test_dWrite_pMode();
 //  test_ISR_012();;
-//  test_ISR_int01();
 //  test_PWM();
 //  test_dRead_portRead();
-  test_matrix_keyboard();
+ // test_matrix_keyboard();
 }
 
 void loop() {  
 
+  test_ISR_int01();
+//  Serial.println(trigger_global);
 }
