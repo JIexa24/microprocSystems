@@ -476,7 +476,7 @@ ISR(TIMER2_COMPA_vect) {
     // toggle the pin
     PORTB ^= mask;
     trigger_global--;
-  } else if (trigger_global == 0){
+  } else if (trigger_global-- == 0){
     PORTCLEAR(PORTB, 4);
     TIMER2_COMPA_DIS();
   }
