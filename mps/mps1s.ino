@@ -46,9 +46,9 @@
 #define P_A6_T 20
 #define P_A7_T 21
 
-#define TX_PIN D0
-#define RX_PIN D1
-#define LED_PIN D13
+#define TX_PIN P_D0
+#define RX_PIN P_D1
+#define LED_PIN P_D13
 
 #define PWM_PIN1 P_D3_T
 #define PWM_PIN2 P_D5_T
