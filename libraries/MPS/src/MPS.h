@@ -2,7 +2,7 @@
 #define MPS_H
 
 #include <Arduino.h>
-
+/* Pins */
 #define P_D0 0
 #define P_D1 1
 #define P_D2 2
@@ -67,6 +67,34 @@
 #define INT0_PIN P_D2_T
 #define INT1_PIN P_D3_T
 
+/*LCD*/
+#define LEFT 0
+#define RIGHT 1
+#define DS_ON 1
+#define DS_OFF 0
+#define DS_VISIBLE 1
+#define DS_BLINK 1
+#define DS_NOBLINK 0
+#define DS_HIDE 0
+#define SH_SYMBOLS 1
+#define SH_CURSOR 0
+#define SH_SHIFT_NO 0
+#define SH_SHIFT_YES 1
+#define WM_8BIT 1
+#define WM_4BIT 0
+#define WM_2LINE 1
+#define WM_1LINE 0
+#define WM_5X10 1
+#define WM_5X8 0
+#define LCD_COMMAND_CLR() (0x1)
+#define LCD_COMMAND_R() (0x1 << 1)
+#define LCD_COMMAND_SHIFT_MODE(ID,SHIFTSYM) ((0x1 << 2) | (ID << 1) | SHIFTSYM)
+#define LCD_COMMAND_DISPLAY(DISPLAY,CURSOR,BLINK) ((0x1 << 3) | (DISPLAY << 2) | (CURSOR << 1) | BLINK)
+#define LCD_COMMAND_SHIFT(SH_PARAM,VECT) ((0x1 << 4) | (SH_PARAM << 3) | ((VECT) << 2))
+#define LCD_COMMAND_WORK_MODE(DL,LINES,SYM_TYPE) ((0x1 << 5) | (DL << 4) | (LINES << 3) | (SYM_TYPE << 2))
+#define LCD_COMMAND_SET_CURSOR(ADDR) ((0x1 << 7) | ADDR)
+
+/*Makros*/
 #define PORTSET(PORT, BIT) (PORT =((PORT) | (1 << (BIT))))
 #define PORTCLEAR(PORT, BIT) (PORT = ((PORT) & ~(1 << (BIT))))
 #define PORTCHECK(PORT, BIT) (((PORT) >> BIT) & 1)
