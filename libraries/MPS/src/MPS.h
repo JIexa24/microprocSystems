@@ -2,6 +2,8 @@
 #define MPS_H
 
 #include <Arduino.h>
+#include <BINARY.h>
+#include <util/twi.h>
 /* Pins */
 #define P_D0 0
 #define P_D1 1
@@ -63,6 +65,9 @@
 #define PWM_PIN6 P_D11_T
 
 #define RESET_PIN 6
+
+#define SDA_PIN P_A4_T
+#define SCL_PIN P_A5_T
 
 #define INT0_PIN P_D2_T
 #define INT1_PIN P_D3_T
