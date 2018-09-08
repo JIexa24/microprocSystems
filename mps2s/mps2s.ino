@@ -7,9 +7,9 @@
 #define I2C_STX   4
 #define I2C_STATUS  (TWSR & 0xF8)
 
-
 #define SIGNAL_PIN_I2C P_D2
-#define TRANSMIT_PIN_I2C P_D3
+#define TRANSMIT_READ_PIN_I2C P_D3
+#define TRANSMIT_WRITE_PIN_I2C P_D4
 #define E_PIN_LCD P_D10
 #define RS_PIN_LCD P_D9
 #define DATA_PIN_SH P_D8
@@ -19,53 +19,117 @@
 #define I2C_FREQ 100000L
 #define TWI_BUFFER_LENGTH 256
 
-static volatile uint8_t i2c_state;
-static volatile uint8_t i2c_slarw;
-static volatile uint8_t i2c_sendStop;      // should the transaction end with a stop
-static volatile uint8_t i2c_inRepStart;     // in the middle of a repeated start
+volatile uint8_t i2c_state;
+volatile uint8_t i2c_slarw;
+volatile uint8_t i2c_sendStop;      // should the transaction end with a stop
+volatile uint8_t i2c_inRepStart;     // in the middle of a repeated start
 
-static void (*i2c_onSlaveTransmit)(void);
-static void (*i2c_onSlaveReceive)(uint8_t*, int);
+void (*i2c_onSlaveTransmit)(void);
+void (*i2c_onSlaveReceive)(uint8_t*, int);
 
-static uint8_t i2c_masterBuffer[TWI_BUFFER_LENGTH];
-static volatile uint8_t i2c_masterBufferIndex;
-static volatile uint8_t i2c_masterBufferLength;
+uint8_t i2c_masterBuffer[TWI_BUFFER_LENGTH];
+volatile uint8_t i2c_masterBufferIndex;
+volatile uint8_t i2c_masterBufferLength;
 
-static uint8_t i2c_txBuffer[TWI_BUFFER_LENGTH];
-static volatile uint8_t i2c_txBufferIndex;
-static volatile uint8_t i2c_txBufferLength;
+uint8_t i2c_txBuffer[TWI_BUFFER_LENGTH];
+volatile uint8_t i2c_txBufferIndex;
+volatile uint8_t i2c_txBufferLength;
 
-static uint8_t i2c_rxBuffer[TWI_BUFFER_LENGTH];
-static volatile uint8_t i2c_rxBufferIndex;
+uint8_t i2c_rxBuffer[TWI_BUFFER_LENGTH];
+volatile uint8_t i2c_rxBufferIndex;
 
-static volatile uint8_t i2c_error;
+volatile uint8_t i2c_error;
+
+volatile uint8_t slave_mode;
+volatile uint8_t slave_addr;
 
 char master_msg[256] = "Question?";
 char slave_msg[256] = "Answer!";
 
+int aref = 1;
+
+int aRead(int pin) {
+  int lowbits = 0;
+  int highbits = 0;
+  if (7 < pin && pin < 0 && 21 < pin && pin < 14) return -1;
+  if (pin > 7) pin = pin - 14;
+
+  ADCSRA |= _BV(ADEN);
+  // (1000 - temperature, 1110 - 1.1V, 1111- GND)
+  ADMUX = (aref << 6) | (pin & 0x7);
+  // 00 00000000 (set - 00000000 00)
+  PORTCLEAR(ADMUX, ADLAR);
+
+  PORTSET(ADCSRA, ADSC);
+
+  while (PORTCHECK(ADCSRA, ADSC));
+
+  lowbits  = ADCL;
+  highbits = ADCH;
+  
+  return (highbits << 8) | lowbits;
+}
+
 void master_i2c() {
-  uint8_t data[4] = {0xf1, 0x55, 0x16, 0xA4};
+  uint8_t data[6] = {0x2, 0x1, 0xf1, 0x55, 0x16, 0xA4};
   char buf[256];
   int addr = 0;
   pMode(SCL_PIN, OUTPUT);
   pMode(SDA_PIN, INPUT);
   
-  pMode(TRANSMIT_PIN_I2C, INPUT);
+  pMode(TRANSMIT_READ_PIN_I2C, INPUT);
+  pMode(TRANSMIT_WRITE_PIN_I2C, INPUT);
   pMode(SIGNAL_PIN_I2C, OUTPUT);
   dWrite(SIGNAL_PIN_I2C, HIGH);
   i2c_init(0);
-  delay(2000);
- // i2c_writeTo(1, data, 4, 1, 1);
+  Serial.println("Ready");
+  Serial.print("AnalogLevel A1 - ");
+  Serial.println(aRead(P_A1_T));
+  ADCSRA = _BV(ADEN) | _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0);
   while (1) {
-  if (dRead(TRANSMIT_PIN_I2C) == HIGH) { 
-  dWrite(SIGNAL_PIN_I2C, LOW);
-  i2c_requestFrom(1, data, addr, 4, 1);
-  sprintf(buf,"addr: %02d | %02x %02x %02x %02x",addr, data[0], data[1], data[2], data[3]);
-  Serial.println(buf);
-  addr = (addr + 1) % 10;
-  delay(2500);
-  dWrite(SIGNAL_PIN_I2C, HIGH);
-  }
+    if (dRead(TRANSMIT_READ_PIN_I2C) == HIGH) { 
+      dWrite(SIGNAL_PIN_I2C, LOW);
+      if (Serial.available() >= 1) {
+        data[0] = Serial.parseInt();
+        if (0 <= data[0] && data[0] < 10){
+          data[1] = 0x0;
+          i2c_requestFrom(1, data, 4, 1);
+        }
+        sprintf(buf,"addr: %02d | %02x %02x %02x %02x",data[0], data[2], data[3], data[4], data[5]);
+        Serial.println(buf);
+      } else {
+        Serial.println("Not Reading Address");
+      }
+      delay(500);
+      Serial.println("Ready");
+      Serial.print("AnalogLevel A1 - ");
+      Serial.println(aRead(P_A1_T));
+      dWrite(SIGNAL_PIN_I2C, HIGH);
+    }
+    if (dRead(TRANSMIT_WRITE_PIN_I2C) == HIGH) { 
+      dWrite(SIGNAL_PIN_I2C, LOW);
+      if (Serial.available() >= 5) {
+        data[0] = Serial.parseInt();
+        data[1] = 0x1;
+        data[2] = Serial.parseInt();
+        data[3] = Serial.parseInt();
+        data[4] = Serial.parseInt();
+        data[5] = Serial.parseInt();
+        sprintf(buf,"addr: %02d | %02x %02x %02x %02x", data[0], data[2], data[3], data[4], data[5]);
+        if (0 <= data[0] && data[0] < 10){
+          i2c_writeTo(1, data, 6, 1, 1);
+        }
+        sprintf(buf,"addr: %02d | %02x %02x %02x %02x", data[0], data[2], data[3], data[4], data[5]);
+        Serial.println(buf);
+      } else {
+        Serial.println("Not Writing Data");
+      }
+      delay(500);
+      Serial.println("Ready");
+      Serial.print("AnalogLevel A1 - ");
+      Serial.println(aRead(P_A1_T));
+      dWrite(SIGNAL_PIN_I2C, HIGH);
+    }
   }
 }
 
@@ -74,10 +138,31 @@ void slave_i2c() {
   pMode(SDA_PIN, INPUT);
  
   pMode(SIGNAL_PIN_I2C, OUTPUT);
-  pMode(TRANSMIT_PIN_I2C, INPUT);
+  pMode(TRANSMIT_READ_PIN_I2C, INPUT);
   dWrite(SIGNAL_PIN_I2C, HIGH);
   lcd1602_init();
   i2c_init(1);
+}
+
+void usart_init(int sp) {
+  UBRR0H = (sp>>8);
+  UBRR0L = (sp & 0xff);
+  UCSR0B = _BV(RXEN0) | _BV(TXEN0);
+
+  // 2stopbits && 8bit  
+  UCSR0C = _BV(USBS0) | _BV(UCSZ00) | _BV(UCSZ01);
+}
+
+void usart_tx(byte data) {
+  while (!PORTCHECK(UCSR0A, UDRE0));
+  cli();
+  UDR0 = data;
+  sei();
+  while (!PORTCHECK(UCSR0A, TXC0));
+}
+
+byte usart_rx() {
+  
 }
 
 void setup() {
@@ -94,33 +179,47 @@ void setup() {
   //slave_i2c();  
 }
 
-void i2c_requestFrom(uint8_t address, uint8_t* data, uint8_t code, int bytes, int sendStop){
-  i2c_writeTo(address, &code, 1, 0, 0);
-  i2c_readFrom(address, data, bytes, sendStop); 
+void i2c_requestFrom(uint8_t address, uint8_t* data, int bytes, int sendStop){
+  if (data[1] == 1) return;
+  uint8_t c[2] = {data[0], data[1]};
+  i2c_writeTo(address, c, 2, 0, 0);
+  i2c_readFrom(address, &data[2], bytes, sendStop); 
 }
-volatile uint8_t slave_addr;
+
+uint8_t slave_data[10][4] = {{0x1, 0xA, 0xA1, 0xBA},
+                       {0x2, 0x9, 0xB2, 0xFF},
+                       {0x3, 0x8, 0xC3, 0xBB},
+                       {0x4, 0x7, 0xD5, 0x31},
+                       {0x5, 0x6, 0xE6, 0x15},
+                       {0x6, 0x5, 0xF7, 0x24},
+                       {0x7, 0x4, 0xE8, 0x3A},
+                       {0x8, 0x3, 0xE9, 0x4C},
+                       {0x9, 0x2, 0xEA, 0x1E},
+                       {0xA, 0x1, 0xEB, 0xBF}};
+
 void onRequestService(){
-  uint8_t data[10][4] = {{0x1, 0xA, 0xA1, 0xBA},
-                         {0x2, 0x9, 0xB2, 0xFF},
-                         {0x3, 0x8, 0xC3, 0xBB},
-                         {0x4, 0x7, 0xD5, 0x31},
-                         {0x5, 0x6, 0xE6, 0x15},
-                         {0x6, 0x5, 0xF7, 0x24},
-                         {0x7, 0x4, 0xE8, 0x3A},
-                         {0x8, 0x3, 0xE9, 0x4C},
-                         {0x9, 0x2, 0xEA, 0x1E},
-                         {0xA, 0x1, 0xEB, 0xBF}};
   char buff[128];
   sprintf(buff, "Request: %02d", slave_addr);
   lcd1602_sendstr(buff, 11, 1, 0);
-  sprintf(buff, "An: %02x %02x %02x %02x", data[slave_addr][0], data[slave_addr][1], data[slave_addr][2], data[slave_addr][3]);
+  sprintf(buff, "An: %02x %02x %02x %02x", slave_data[slave_addr][0], slave_data[slave_addr][1], slave_data[slave_addr][2], slave_data[slave_addr][3]);
   lcd1602_sendstr(buff, 15, 2, 0);
-  int res = i2c_transmit(data[slave_addr], 4);
+  int res = i2c_transmit(slave_data[slave_addr], 4);
 }
 
 void onReceiveService(uint8_t* data, int len){
+  char buff[128];
   slave_addr = data[0];
-//  lcd1602_sendstr(buff, 5, 2, 0);
+  slave_mode = data[1];
+  if (slave_mode == 1) {
+    slave_data[slave_addr][0] = data[2];
+    slave_data[slave_addr][1] = data[3];
+    slave_data[slave_addr][2] = data[4];
+    slave_data[slave_addr][3] = data[5];    
+    sprintf(buff, "Receive: %02d", slave_addr);
+    lcd1602_sendstr(buff, 11, 1, 0);
+    sprintf(buff, "Da: %02x %02x %02x %02x", slave_data[slave_addr][0], slave_data[slave_addr][1], slave_data[slave_addr][2], slave_data[slave_addr][3]);
+    lcd1602_sendstr(buff, 15, 2, 0);
+  }
 }
 
 void i2c_init(int address) {
@@ -327,9 +426,7 @@ ISR(TWI_vect) {
     // Master Transmitter
     case TW_MT_SLA_ACK:  // slave receiver acked address
     case TW_MT_DATA_ACK: // slave receiver acked data
-      // if there is data to send, send it, otherwise stop 
       if(i2c_masterBufferIndex < i2c_masterBufferLength){
-        // copy data to output register and ack
         TWDR = i2c_masterBuffer[i2c_masterBufferIndex++];
         i2c_replyack(1);
       }else{
@@ -357,10 +454,8 @@ ISR(TWI_vect) {
       
     // Master Receiver
     case TW_MR_DATA_ACK: // data received, ack sent
-      // put byte into buffer
       i2c_masterBuffer[i2c_masterBufferIndex++] = TWDR;
     case TW_MR_SLA_ACK:  // address sent, ack received
-      // ack if more bytes are expected, otherwise nack
       if(i2c_masterBufferIndex < i2c_masterBufferLength){
         i2c_replyack(1);
       }else{
@@ -368,15 +463,11 @@ ISR(TWI_vect) {
       }
       break;
     case TW_MR_DATA_NACK: // data received, nack sent
-      // put final byte into buffer
       i2c_masterBuffer[i2c_masterBufferIndex++] = TWDR;
   if (i2c_sendStop)
           i2c_stopCond();
   else {
-    i2c_inRepStart = true;  // we're gonna send the START
-    // don't enable the interrupt. We'll generate the start, but we 
-    // avoid handling the interrupt until we're in the next transaction,
-    // at the point where we would normally issue the start.
+    i2c_inRepStart = true;  
     TWCR = _BV(TWINT) | _BV(TWSTA)| _BV(TWEN) ;
     i2c_state = I2C_READY;
   }    
@@ -391,64 +482,55 @@ ISR(TWI_vect) {
     case TW_SR_GCALL_ACK: // addressed generally, returned ack
     case TW_SR_ARB_LOST_SLA_ACK:   // lost arbitration, returned ack
     case TW_SR_ARB_LOST_GCALL_ACK: // lost arbitration, returned ack
-      // enter slave receiver mode
       i2c_state = I2C_SRX;
-      // indicate that rx buffer can be overwritten and ack
       i2c_rxBufferIndex = 0;
       i2c_replyack(1);
       break;
     case TW_SR_DATA_ACK:       // data received, returned ack
     case TW_SR_GCALL_DATA_ACK: // data received generally, returned ack
-      // if there is still room in the rx buffer
+
       if(i2c_rxBufferIndex < TWI_BUFFER_LENGTH){
         // put byte in buffer and ack
         i2c_rxBuffer[i2c_rxBufferIndex++] = TWDR;
         i2c_replyack(1);
       }else{
-        // otherwise nack
         i2c_replyack(0);
       }
       break;
     case TW_SR_STOP: // stop or repeated start condition received
-      // ack future responses and leave slave receiver state
       i2c_releaseBus();
-      // put a null char after data if there's room
+
       if(i2c_rxBufferIndex < TWI_BUFFER_LENGTH){
         i2c_rxBuffer[i2c_rxBufferIndex] = '\0';
       }
       // callback to user defined callback
       i2c_onSlaveReceive(i2c_rxBuffer, i2c_rxBufferIndex);
-      // since we submit rx buffer to "wire" library, we can reset it
+
       i2c_rxBufferIndex = 0;
       break;
     case TW_SR_DATA_NACK:       // data received, returned nack
     case TW_SR_GCALL_DATA_NACK: // data received generally, returned nack
-      // nack back at master
       i2c_replyack(0);
       break;
     
     // Slave Transmitter
     case TW_ST_SLA_ACK:          // addressed, returned ack
     case TW_ST_ARB_LOST_SLA_ACK: // arbitration lost, returned ack
-      // enter slave transmitter mode
+    
       i2c_state = I2C_STX;
-      // ready the tx buffer index for iteration
       i2c_txBufferIndex = 0;
-      // set tx buffer length to be zero, to verify if user changes it
       i2c_txBufferLength = 0;
-      // request for txBuffer to be filled and length to be set
-      // note: user must call twi_transmit(bytes, length) to do this
       i2c_onSlaveTransmit();
-      // if they didn't change buffer & length, initialize it
+
       if(0 == i2c_txBufferLength){
         i2c_txBufferLength = 1;
         i2c_txBuffer[0] = 0x00;
       }
-      // transmit first byte from buffer, fall
+
     case TW_ST_DATA_ACK: // byte sent, ack returned
-      // copy data to output register
+
       TWDR = i2c_txBuffer[i2c_txBufferIndex++];
-      // if there is more to send, ack, otherwise nack
+
       if(i2c_txBufferIndex < i2c_txBufferLength){
         i2c_replyack(1);
       }else{
