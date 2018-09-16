@@ -72,6 +72,13 @@
 #define INT0_PIN P_D2_T
 #define INT1_PIN P_D3_T
 
+#define I2C_READY 0
+#define I2C_MRX   1
+#define I2C_MTX   2
+#define I2C_SRX   3
+#define I2C_STX   4
+#define I2C_STATUS  (TWSR & 0xF8)
+
 /*LCD*/
 #define LEFT 0
 #define RIGHT 1
