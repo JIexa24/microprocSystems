@@ -1,18 +1,32 @@
 #include <MPS.h>
 
+#define MASTER 1
+#define DCA_CPIN_SH P_D6
+#define DCA_LATCH_CPIN_SH P_D7
+#define DCA_CLK_CPIN_SH P_D8
+#define DCA_DPIN_SH P_D9
+#define DCA_LATCH_DPIN_SH P_D10
+#define DCA_CLK_DPIN_SH P_D11
+
 #define DS18B20_PIN P_D5
 #define DS18B20_MOSFET_PIN P_D6
 #define WIRE_SKIPROM 0xCC
 #define WIRE_CHOOSEROM 0x55
 #define WIRE_SEARCH 0xF0
+#define DS18B20_ST 0X44
 #define SIGNAL_PIN_I2C P_D2
 #define TRANSMIT_READ_PIN_I2C P_D3
 #define TRANSMIT_WRITE_PIN_I2C P_D4
+#define SLAVE_DATA_START_WRITE_ADDR 0
+#define SLAVE_DATA_STOP_WRITE_ADDR 9
+#define SLAVE_DATA_START_READ_ADDR 0
+#define SLAVE_DATA_STOP_READ_ADDR 10
+#define SLAVE_DATA_ROM_ADDR (SLAVE_DATA_STOP_READ_ADDR + 1)
 #define E_PIN_LCD P_D10
 #define RS_PIN_LCD P_D9
-#define DATA_PIN_SH P_D8
-#define CLK_PIN_SH P_D7
-#define LATCH_PIN_SH P_D6
+#define LCD_DATA_PIN_SH P_D8
+#define LCD_CLK_PIN_SH P_D7
+#define LCD_LATCH_PIN_SH P_D6
 #define RANGE 50
 #define I2C_FREQ 100000L
 #define I2C_BUFFER_LENGTH 256
@@ -46,8 +60,9 @@ volatile uint8_t slave_mode;
 volatile uint8_t slave_addr;
 
 int aref = 1;
+int dca_state = 0;
 
-uint8_t slave_data[11][4] = {{0x1, 0xA, 0xA1, 0xBA},
+uint8_t slave_data[13][4] = {{0x1, 0xA, 0xA1, 0xBA},
                        {0x2, 0x9, 0xB2, 0xFF},
                        {0x3, 0x8, 0xC3, 0xBB},
                        {0x4, 0x7, 0xD5, 0x31},
@@ -57,7 +72,212 @@ uint8_t slave_data[11][4] = {{0x1, 0xA, 0xA1, 0xBA},
                        {0x8, 0x3, 0xE9, 0x4C},
                        {0x9, 0x2, 0xEA, 0x1E},
                        {0xA, 0x1, 0xEB, 0xBF},
+                       {0x0, 0x0, 0x0, 0x0},
+                       {0x0, 0x0, 0x0, 0x0},
                        {0x0, 0x0, 0x0, 0x0}};
+
+
+void setup() {
+  uint8_t r[8];
+  sei();  
+  #if MASTER == 1
+    master();
+  #else
+  /*
+  Serial.begin(9600);
+    search_1wire(r, DS18B20_PIN);
+    for(int i = 0; i < 8; ++ i) {Serial.print(r[i], HEX);Serial.print(" ");}Serial.println(" ");
+    while(1);*/
+    slave();
+  #endif  
+}
+
+void dca_init() {
+  //5v nreset on  
+  dca_state = 1 << 0 | 1 << 1 | 1 << 2;
+  data_shift595(dca_state, DCA_CPIN_SH, DCA_CLK_CPIN_SH, DCA_LATCH_CPIN_SH);
+}
+
+void dca_off() {
+  dca_state = dca_state & (~(1 << 0));
+  data_shift595(dca_state, DCA_CPIN_SH, DCA_CLK_CPIN_SH, DCA_LATCH_CPIN_SH);
+}
+
+void dca_ref(byte st) {
+  if (st == 0)
+  dca_state = dca_state & (~(1 << 2));
+  else 
+  dca_state = dca_state | (1 << 2);
+  data_shift595(dca_state, DCA_CPIN_SH, DCA_CLK_CPIN_SH, DCA_LATCH_CPIN_SH);
+}
+
+void dca_write(byte data) {
+  // on nreset 5v 
+  data_shift595(data, DCA_DPIN_SH, DCA_CLK_DPIN_SH, DCA_LATCH_DPIN_SH);
+}
+
+void master() {
+  uint8_t data[6] = {0x2, 0x1, 0xf1, 0x55, 0x16, 0xA4};
+  uint8_t rom_no[10] = {SLAVE_DATA_STOP_READ_ADDR + 1, 0x0, 0};
+  char buf[256];
+  int addr = 0;
+  int dca_table[256];
+  int i;
+  usart_init(9600);
+  pMode(SCL_PIN, OUTPUT);
+  pMode(SDA_PIN, INPUT);
+  
+  pMode(TRANSMIT_READ_PIN_I2C, INPUT);
+  pMode(TRANSMIT_WRITE_PIN_I2C, INPUT);
+  pMode(SIGNAL_PIN_I2C, OUTPUT);
+  dWrite(SIGNAL_PIN_I2C, LOW);
+  pMode(DCA_CPIN_SH,OUTPUT);
+  pMode(DCA_CLK_CPIN_SH,OUTPUT);
+  pMode(DCA_LATCH_CPIN_SH,OUTPUT);
+  dWrite(DCA_CPIN_SH, LOW);
+  dWrite(DCA_CLK_CPIN_SH, LOW);
+  dWrite(DCA_LATCH_CPIN_SH, LOW);
+  pMode(DCA_DPIN_SH,OUTPUT);
+  pMode(DCA_CLK_DPIN_SH,OUTPUT);
+  pMode(DCA_LATCH_DPIN_SH,OUTPUT);
+  dWrite(DCA_DPIN_SH, LOW);
+  dWrite(DCA_CLK_DPIN_SH, LOW);
+  dWrite(DCA_LATCH_DPIN_SH, LOW);
+  dca_init();
+  i2c_init(0);
+  usart_sendsln("Ready");
+  usart_sends("AnalogLevel A0 - ");
+  usart_sendln(aRead(P_A0_T));
+  ADCSRA = _BV(ADEN) | _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0);
+  for (i = 0; i < 256; ++i) {
+    dca_write(i);
+    delay(50);
+    dca_table[i] = aRead(P_A0_T);
+  }
+  dca_write(0);
+  for (i = 0; i < 256; i += 16) {
+    sprintf(buf, "%04d %04d %04d %04d %04d %04d %04d %04d %04d %04d %04d %04d %04d %04d %04d %04d", dca_table[i], dca_table[i + 1], dca_table[i + 2], dca_table[i + 3],
+      dca_table[i + 4], dca_table[i + 5], dca_table[i + 6], dca_table[i + 7],
+      dca_table[i + 8], dca_table[i + 9], dca_table[i + 10], dca_table[i + 11],
+      dca_table[i + 12], dca_table[i + 13], dca_table[i + 14], dca_table[i + 15]);
+    usart_sendsln(buf);
+  }
+  dWrite(SIGNAL_PIN_I2C, HIGH);
+  while (1) {
+    if (dRead(TRANSMIT_READ_PIN_I2C) == HIGH) { 
+      dWrite(SIGNAL_PIN_I2C, LOW);
+      usart_sendsln("Please, input adress");
+      while (!usart_available());
+      data[0] = usart_parseInt();
+      if (SLAVE_DATA_START_READ_ADDR <= data[0] && data[0] <= SLAVE_DATA_ROM_ADDR){
+      data[1] = 0x0;
+        if (data[0] == SLAVE_DATA_ROM_ADDR) {
+          rom_no[0] = data[0];
+          rom_no[1] = 0x0;
+          i2c_requestFrom(1, rom_no, 8, 1);
+        } else 
+          i2c_requestFrom(1, data, 4, 1);
+        if (data[0] == SLAVE_DATA_STOP_READ_ADDR) {
+          sprintf(buf,"addr: %02d | %02x %02x %02x %02x",data[0], data[2], data[3], data[4], data[5]);
+          usart_sendsln(buf);
+          sprintf(buf,"addr: %02d | cel - %d | far - %d",data[0], (data[2] << 8) | data[3], (data[4] << 8) | data[5]);
+          usart_sendsln(buf);
+        } else if (data[0] == SLAVE_DATA_ROM_ADDR) { 
+          sprintf(buf,"rom_number: %02d | %02x %02x %02x %02x %02x %02x %02x %02x", rom_no[0], rom_no[2], rom_no[3], rom_no[4], rom_no[5], rom_no[6], rom_no[7], rom_no[8], rom_no[9]);
+          usart_sendsln(buf);
+        } else {
+          sprintf(buf,"addr: %02d | %02x %02x %02x %02x",data[0], data[2], data[3], data[4], data[5]);
+          usart_sendsln(buf);
+        }
+      } else {
+        usart_sendsln("Not Reading Address");
+      }
+      delay(500);
+      usart_sendsln("Ready");
+      usart_sends("AnalogLevel A0 - ");
+      usart_sendln(aRead(P_A0_T));
+      dWrite(SIGNAL_PIN_I2C, HIGH);
+    }
+    if (dRead(TRANSMIT_WRITE_PIN_I2C) == HIGH) { 
+      dWrite(SIGNAL_PIN_I2C, LOW);
+      do {
+      usart_sendsln("Please, input adress");
+      while (!usart_available());
+      data[0] = usart_parseInt();
+      data[1] = 0x1;
+      } while (!(SLAVE_DATA_START_WRITE_ADDR <= data[0] && data[0] <= SLAVE_DATA_STOP_WRITE_ADDR));
+      usart_sendsln("Please, input write data[0]");
+      while (!usart_available());
+      data[2] = usart_parseInt();
+      usart_sendsln("Please, input write data[1]");
+      while (!usart_available());
+      data[3] = usart_parseInt();
+      usart_sendsln("Please, input write data[2]");
+      while (!usart_available());
+      data[4] = usart_parseInt();
+      usart_sendsln("Please, input write data[3]");
+      while (!usart_available());
+      data[5] = usart_parseInt();
+      sprintf(buf,"addr: %02d | %02x %02x %02x %02x", data[0], data[2], data[3], data[4], data[5]);
+      if (SLAVE_DATA_START_WRITE_ADDR <= data[0] && data[0] <= SLAVE_DATA_STOP_WRITE_ADDR){
+        i2c_writeTo(1, data, 6, 1, 1);
+        sprintf(buf,"addr: %02d | %02x %02x %02x %02x", data[0], data[2], data[3], data[4], data[5]);
+        usart_sendsln(buf);
+      } else {
+        usart_sendsln("Not Writing Data");
+      }
+      delay(500);
+      usart_sendsln("Ready");
+      usart_sends("AnalogLevel A0 - ");
+      usart_sendln(aRead(P_A0_T));
+      dWrite(SIGNAL_PIN_I2C, HIGH);
+    }
+  }
+}
+
+void slave() {
+  pMode(SCL_PIN, INPUT); 
+  pMode(SDA_PIN, INPUT);
+ 
+  pMode(SIGNAL_PIN_I2C, OUTPUT);
+  dWrite(SIGNAL_PIN_I2C, HIGH);
+  
+  pMode(LCD_DATA_PIN_SH,OUTPUT);
+  pMode(LCD_CLK_PIN_SH,OUTPUT);
+  pMode(LCD_LATCH_PIN_SH,OUTPUT);
+  dWrite(LCD_DATA_PIN_SH, LOW);
+  dWrite(LCD_CLK_PIN_SH, LOW);
+  dWrite(LCD_LATCH_PIN_SH, LOW);
+  
+  lcd1602_init();
+  i2c_init(1);
+
+  byte i;
+  byte addr[8];
+  byte count = 5;
+
+  uint8_t rom_no[8] = {0};
+  while(1){
+    if (count == 5) {
+      for (i = 0; i < 4; ++i){ 
+        slave_data[10][i] = 0;
+        slave_data[11][i] = 0;
+        slave_data[12][i] = 0;
+      }
+      for (i = 0; i < 8; ++i){
+        rom_no[i] = 0;
+      }
+      count = 0;
+      while(!search_1wire(rom_no, DS18B20_PIN));
+      for(i = 0; i < 8; ++i) {
+        slave_data[SLAVE_DATA_ROM_ADDR + i / 4][i % 4] = rom_no[i];
+      }
+    }
+    delay(1000);
+    ++count;
+  }
+}
+
 ISR(USART_RX_vect) {
   byte tmp;
   if (!PORTCHECK(UCSR0A, UPE0))
@@ -177,30 +397,35 @@ byte usart_rx() {
   return data;  
 }
 
-uint8_t search_1wire(uint8_t *newAddr)
+uint8_t search_1wire(uint8_t *newAddr, int pin)
 {
   uint8_t id_bit_number;
-  uint8_t rom_byte_number;
-  uint8_t id_bit, cmp_id_bit;
   uint8_t rom_no[8];
+  uint8_t rom_byte_number, s_direction;
+  uint8_t id_bit, cmp_id_bit;
   id_bit_number = 0;
   rom_byte_number = 0;
   
-  if (reset_1wire() == 0) return 0;
+  if (reset_1wire(pin) == 0) return 0;
   // issue the search command
-  write_1wire(WIRE_SEARCH, 0);
+  write_1wire(WIRE_SEARCH, 0, pin);
   // loop to do the search
   while (id_bit_number <= 63) {
-    id_bit = read_bit_1wire();
-    cmp_id_bit = read_bit_1wire();
+    id_bit = read_bit_1wire(pin);
+    cmp_id_bit = read_bit_1wire(pin);
     if (id_bit == 1 && cmp_id_bit == 1) return 0;
-    else if (id_bit == 1 && cmp_id_bit == 0)
-    rom_no[rom_byte_number] |= 1 << (id_bit_number % 8);
-    else if (id_bit == 0 && cmp_id_bit == 1)
-    rom_no[rom_byte_number] &= ~(1 << (id_bit_number % 8));
-    else if (id_bit == 0 && cmp_id_bit == 0) {
-      
+    else if (id_bit == 1 && cmp_id_bit == 0) {
+      rom_no[rom_byte_number] |= 1 << (id_bit_number % 8);
+      s_direction = 1;
+    } else if (id_bit == 0 && cmp_id_bit == 1) {
+      rom_no[rom_byte_number] &= ~(1 << (id_bit_number % 8));
+      s_direction = 0;
+    } else if (id_bit == 0 && cmp_id_bit == 0) {
+      s_direction = 0;
+      //collision
     }
+    write_bit_1wire(s_direction, pin);
+    ++id_bit_number;
     if (id_bit_number % 8 == 7) ++rom_byte_number;
   }
   for (int i = 0; i < 8; i++)
@@ -208,96 +433,98 @@ uint8_t search_1wire(uint8_t *newAddr)
   return 1;
 }
 
-uint8_t reset_1wire()
+uint8_t reset_1wire(int pin)
 {
   uint8_t r;
+  uint8_t retries = 125;
+
   cli();
-  dWrite(DS18B20_PIN, LOW);
-  pMode(DS18B20_PIN, OUTPUT);  // drive output low
+  dWrite(pin, LOW);
+  pMode(pin, OUTPUT);  // drive output low
   sei();
   delayMicroseconds(480);
   cli();
-  pMode(DS18B20_PIN, INPUT); // allow it to float
+  pMode(pin, INPUT); // allow it to float
   delayMicroseconds(70);
-  r = dRead(DS18B20_PIN);
+  r = !(dRead(pin));
   sei();
   delayMicroseconds(410);
   return r;
 }
 
-uint8_t read_bit_1wire() {
+uint8_t read_bit_1wire(int pin) {
   uint8_t r;
   cli();
-  pMode(DS18B20_PIN, OUTPUT);
-  dWrite(DS18B20_PIN, LOW);
+  pMode(pin, OUTPUT);
+  dWrite(pin, LOW);
   delayMicroseconds(3);
-  pMode(DS18B20_PIN, INPUT); // let pin float, pull up will raise
+  pMode(pin, INPUT); // let pin float, pull up will raise
   delayMicroseconds(10);
-  r = dRead(DS18B20_PIN);
+  r = dRead(pin);
   sei();
   delayMicroseconds(53);
   return r;
 }
 
-uint8_t read_1wire() {
+uint8_t read_1wire(int pin) {
   uint8_t bitMask;
   uint8_t r = 0;
 
   for (bitMask = 0; bitMask < 8; ++bitMask) {
-    if (read_bit_1wire()) r |= 1 << bitMask;
+    if (read_bit_1wire(pin)) r |= 1 << bitMask;
   }
   return r;
 }
 
-void write_bit_1wire(byte v) {
+void write_bit_1wire(byte v, int pin) {
   if (v & 0x1) {
     cli();
-    dWrite(DS18B20_PIN, LOW);
-    pMode(DS18B20_PIN, OUTPUT);  // drive output low
+    dWrite(pin, LOW);
+    pMode(pin, OUTPUT);  // drive output low
     delayMicroseconds(10);
-    dWrite(DS18B20_PIN, HIGH); // drive output high
+    dWrite(pin, HIGH); // drive output high
     sei();
     delayMicroseconds(55);
   } else {
     cli();
-    dWrite(DS18B20_PIN, LOW);
-    pMode(DS18B20_PIN, OUTPUT);  // drive output low
+    dWrite(pin, LOW);
+    pMode(pin, OUTPUT);  // drive output low
     delayMicroseconds(65);
-    dWrite(DS18B20_PIN, HIGH); // drive output high
+    dWrite(pin, HIGH); // drive output high
     sei();
     delayMicroseconds(5);
   }
 }
 
-void read_bytes_1wire(uint8_t *buf, uint16_t count) {
+void read_bytes_1wire(uint8_t *buf, uint16_t count, int pin) {
   for (uint16_t i = 0 ; i < count ; i++)
-    buf[i] = read_1wire();
+    buf[i] = read_1wire(pin);
 }
 
-void write_1wire(uint8_t v, byte power) {
+void write_1wire(uint8_t v, byte power, int pin) {
   uint8_t bitMask;
 
   for (bitMask = 0; bitMask < 8; ++bitMask) {
-    write_bit_1wire((v >> bitMask) & 0x1);
+    write_bit_1wire((v >> bitMask) & 0x1, pin);
   }
   if (!power) {
     cli();
-    pMode(DS18B20_PIN, INPUT);
-    dWrite(DS18B20_PIN, LOW);
+    pMode(pin, INPUT);
+    dWrite(pin, LOW);
     sei();
   }
 }
 
-void select_rom_1wire(const uint8_t rom[8])
+void select_rom_1wire(const uint8_t rom[8], int pin)
 {
   uint8_t i;
-  write_1wire(WIRE_CHOOSEROM, 0);// Choose ROM
+  write_1wire(WIRE_CHOOSEROM, 0, pin);// Choose ROM
   for (i = 0; i < 8; i++)
-    write_1wire(rom[i], 0);
+    write_1wire(rom[i], 0, pin);
 }
 
-void skip_rom_1wire() {
-  write_1wire(WIRE_SKIPROM, 0);// Skip ROM
+void skip_rom_1wire(int pin) {
+  write_1wire(WIRE_SKIPROM, 0, pin);// Skip ROM
 }
 
 int aRead(int pin) {
@@ -322,110 +549,43 @@ int aRead(int pin) {
   return (highbits << 8) | lowbits;
 }
 
-void master() {
-  uint8_t data[6] = {0x2, 0x1, 0xf1, 0x55, 0x16, 0xA4};
-  char buf[256];
-  int addr = 0;
-  usart_init(9600);
-  pMode(SCL_PIN, OUTPUT);
-  pMode(SDA_PIN, INPUT);
-  
-  pMode(TRANSMIT_READ_PIN_I2C, INPUT);
-  pMode(TRANSMIT_WRITE_PIN_I2C, INPUT);
-  pMode(SIGNAL_PIN_I2C, OUTPUT);
-  dWrite(SIGNAL_PIN_I2C, HIGH);
-  i2c_init(0);
-  usart_sendsln("Ready");
-  usart_sends("AnalogLevel A0 - ");
-  usart_sendln(aRead(P_A0_T));
-  ADCSRA = _BV(ADEN) | _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0);
-  while (1) {
-    if (dRead(TRANSMIT_READ_PIN_I2C) == HIGH) { 
-      dWrite(SIGNAL_PIN_I2C, LOW);
-      usart_sendsln("Please, input adress");
-      while (!usart_available());
-        data[0] = usart_parseInt();
-        if (0 <= data[0] && data[0] <= 10){
-          data[1] = 0x0;
-          i2c_requestFrom(1, data, 4, 1);
-          if (data[0] == 10) {
-            sprintf(buf,"addr: %02d | %02x %02x %02x %02x",data[0], data[2], data[3], data[4], data[5]);
-            usart_sendsln(buf);
-            sprintf(buf,"addr: %02d | cel - %d | far - %d",data[0], (data[2] << 8) | data[3], (data[4] << 8) | data[5]);
-            usart_sendsln(buf);
-          } else {
-          sprintf(buf,"addr: %02d | %02x %02x %02x %02x",data[0], data[2], data[3], data[4], data[5]);
-          usart_sendsln(buf);
-          }
-        }
-        else {
-          usart_sendsln("Not Reading Address");
-        }
-      delay(500);
-      usart_sendsln("Ready");
-      usart_sends("AnalogLevel A0 - ");
-      usart_sendln(aRead(P_A0_T));
-      dWrite(SIGNAL_PIN_I2C, HIGH);
-    }
-    if (dRead(TRANSMIT_WRITE_PIN_I2C) == HIGH) { 
-      dWrite(SIGNAL_PIN_I2C, LOW);
-      usart_sendsln("Please, input adress");
-      while (!usart_available());
-      data[0] = usart_parseInt();
-      data[1] = 0x1;
-      usart_sendsln("Please, input write data[0]");
-      while (!usart_available());
-      data[2] = usart_parseInt();
-      usart_sendsln("Please, input write data[1]");
-      while (!usart_available());
-      data[3] = usart_parseInt();
-      usart_sendsln("Please, input write data[2]");
-      while (!usart_available());
-      data[4] = usart_parseInt();
-      usart_sendsln("Please, input write data[3]");
-      while (!usart_available());
-      data[5] = usart_parseInt();
-      sprintf(buf,"addr: %02d | %02x %02x %02x %02x", data[0], data[2], data[3], data[4], data[5]);
-      if (0 <= data[0] && data[0] <= 9){
-        i2c_writeTo(1, data, 6, 1, 1);
-        sprintf(buf,"addr: %02d | %02x %02x %02x %02x", data[0], data[2], data[3], data[4], data[5]);
-        usart_sendsln(buf);
-      } else {
-        usart_sendsln("Not Writing Data");
-      }
-      delay(500);
-      usart_sendsln("Ready");
-      usart_sends("AnalogLevel A0 - ");
-      usart_sendln(aRead(P_A0_T));
-      dWrite(SIGNAL_PIN_I2C, HIGH);
-    }
-  }
+void i2c_requestFrom(uint8_t address, uint8_t* data, int bytes, int sendStop){
+  if (data[1] == 1) return;
+  uint8_t c[2] = {data[0], data[1]};
+  i2c_writeTo(address, c, 2, 0, 0);
+  i2c_readFrom(address, &data[2], bytes, sendStop); 
 }
 
-void slave() {
-  pMode(SCL_PIN, INPUT); 
-  pMode(SDA_PIN, INPUT);
- 
-  pMode(SIGNAL_PIN_I2C, OUTPUT);
-  dWrite(SIGNAL_PIN_I2C, HIGH);
-  lcd1602_init();
-  i2c_init(1);
-  
+void onRequestService(){
+  char buff[128];
   byte i;
   byte data[12];
-  byte addr[8];
+  byte rom_no[8];
   float celsius, fahrenheit;
-
-  while(1){
-    reset_1wire();
-    skip_rom_1wire();
-    write_1wire(0x44, 1);
+  sprintf(buff, "Request: %02d", slave_addr);
+  lcd1602_sendstr(buff, 11, 1, 0);
+  if (SLAVE_DATA_START_READ_ADDR <= slave_addr && slave_addr <= SLAVE_DATA_STOP_READ_ADDR) {
+    sprintf(buff, "An: %02x %02x %02x %02x", slave_data[slave_addr][0], slave_data[slave_addr][1], slave_data[slave_addr][2], slave_data[slave_addr][3]);
+    lcd1602_sendstr(buff, 15, 2, 0);
+    int res = i2c_transmit(slave_data[slave_addr], 4);
+  } else {
+    sprintf(buff, "Request: ROM");
+    lcd1602_sendstr(buff, 12, 1, 0);
+    //calculating temperature
+    for(i = 0; i < 8; ++i) {
+      rom_no[i] = slave_data[SLAVE_DATA_ROM_ADDR + i / 4][i % 4];
+    }
+    reset_1wire(DS18B20_PIN);
+    select_rom_1wire(rom_no, DS18B20_PIN);
+//    skip_rom_1wire(DS18B20_PIN);
+    write_1wire(DS18B20_ST, 1, DS18B20_PIN);
     delay(1000);
-    reset_1wire();
-    skip_rom_1wire();
-    write_1wire(0xBE, 1);
-    for ( i = 0; i < 9; i++) {              
-      data[i] = read_1wire(); 
+    reset_1wire(DS18B20_PIN);
+    select_rom_1wire(rom_no, DS18B20_PIN);
+//    skip_rom_1wire(DS18B20_PIN);
+    write_1wire(0xBE, 1, DS18B20_PIN);
+    for (i = 0; i < 9; i++) {              
+      data[i] = read_1wire(DS18B20_PIN); 
     }  
     int16_t raw = (data[1] << 8) | data[0]; 
       if (data[7] == 0x10) {
@@ -445,43 +605,10 @@ void slave() {
     slave_data[10][1] = (unsigned int)celsius & 0xFF;
     slave_data[10][2] = (unsigned int)fahrenheit >> 8 & 0xFF;
     slave_data[10][3] = (unsigned int)fahrenheit & 0xFF;
-    delay(5000);
-  }
-
-}
-
-void setup() {
-  pMode(DATA_PIN_SH,OUTPUT);
-  pMode(CLK_PIN_SH,OUTPUT);
-  pMode(LATCH_PIN_SH,OUTPUT);
-  dWrite(DATA_PIN_SH, LOW);
-  dWrite(CLK_PIN_SH, LOW);
-  dWrite(LATCH_PIN_SH, LOW);
-  sei();  
-
-  master();
-  //slave();  
-}
-
-void i2c_requestFrom(uint8_t address, uint8_t* data, int bytes, int sendStop){
-  if (data[1] == 1) return;
-  uint8_t c[2] = {data[0], data[1]};
-  i2c_writeTo(address, c, 2, 0, 0);
-  i2c_readFrom(address, &data[2], bytes, sendStop); 
-}
-
-void onRequestService(){
-  char buff[128];
-  sprintf(buff, "Request: %02d", slave_addr);
-  lcd1602_sendstr(buff, 11, 1, 0);
-  if (0 <= slave_addr && slave_addr < 10) {
-    sprintf(buff, "An: %02x %02x %02x %02x", slave_data[slave_addr][0], slave_data[slave_addr][1], slave_data[slave_addr][2], slave_data[slave_addr][3]);
-    lcd1602_sendstr(buff, 15, 2, 0);
-    int res = i2c_transmit(slave_data[slave_addr], 4);
-  } else {
-    sprintf(buff, "An: %02x %02x %02x %02x", slave_data[slave_addr][0], slave_data[slave_addr][1], slave_data[slave_addr][2], slave_data[slave_addr][3]);
-    lcd1602_sendstr(buff, 15, 2, 0);
-    int res = i2c_transmit(slave_data[10], 4);
+    
+    sprintf(buff, "%02x%02x%02x%02x%02x%02x%02x%02x", slave_data[11][0], slave_data[11][1], slave_data[11][2], slave_data[11][3], slave_data[12][0], slave_data[12][1], slave_data[12][2], slave_data[12][3]);
+    lcd1602_sendstr(buff, 16, 2, 0);
+    int res = i2c_transmit(slave_data[11], 8);
   }
 }
 
@@ -489,7 +616,7 @@ void onReceiveService(uint8_t* data, int len){
   char buff[128];
   slave_addr = data[0];
   slave_mode = data[1];
-  if (slave_mode == 1 && slave_addr < 10 && slave_addr >= 0) {
+  if (slave_mode == 1 && slave_addr <= SLAVE_DATA_STOP_WRITE_ADDR && slave_addr >= SLAVE_DATA_START_WRITE_ADDR) {
     slave_data[slave_addr][0] = data[2];
     slave_data[slave_addr][1] = data[3];
     slave_data[slave_addr][2] = data[4];
@@ -835,31 +962,31 @@ void loop() {
  //Serial.println(dRead(SCL_PIN));
 }
 
-void data_shift595(byte data) {
-  shiftOut(DATA_PIN_SH, CLK_PIN_SH, MSBFIRST, data);
-
-  digitalWrite(LATCH_PIN_SH, LOW);
-  digitalWrite(LATCH_PIN_SH, HIGH);
-  digitalWrite(LATCH_PIN_SH, LOW);
+void data_shift595(byte data, int data_pin, int clk_pin,int latch_pin) {
+  shiftOut(data_pin, clk_pin, MSBFIRST, data);
+  
+  digitalWrite(latch_pin, LOW);
+  digitalWrite(latch_pin, HIGH);
+  digitalWrite(latch_pin, LOW);
 }
 
 void lcd1602_sendcommand(byte command) {
   dWrite(RS_PIN_LCD, LOW);
-  data_shift595(command);
+  data_shift595(command, LCD_DATA_PIN_SH, LCD_CLK_PIN_SH, LCD_LATCH_PIN_SH);
   lcd1602_pulse();
   delayMicroseconds(100);
 }
 
 void lcd1602_senddata(byte data) {
   dWrite(RS_PIN_LCD, HIGH);
-  data_shift595(data);
+  data_shift595(data, LCD_DATA_PIN_SH, LCD_CLK_PIN_SH, LCD_LATCH_PIN_SH);
   lcd1602_pulse();
   delayMicroseconds(100);
 }
 
 void lcd1602_sendstr(char* str, int len, int strn, int pos) {
   int i = 0;
-  if (pos + len >= 16) return;
+  if (pos + len > 16) return;
   if (strn == 1)
     lcd1602_sendcommand(LCD_COMMAND_SET_CURSOR(0 + pos));
   else
