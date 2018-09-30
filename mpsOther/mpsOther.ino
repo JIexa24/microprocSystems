@@ -1,7 +1,7 @@
 
 #define REGISTER_IN 4
-#define REGISTER_SIGN 3
-#define REGISTER_HEX 2
+#define REGISTER_CS1 3
+#define REGISTER_CS2 2
 #define REGISTER_CLK 14
 #define SHIFT_DATA 2
 #define SHIFT_CLK 3
@@ -12,7 +12,7 @@
 #define OUT_EN 14
 #define CH_EN 15
 #define ADDR 255
-#define RATE 100
+#define RATE 50
 
 #define AS 1
 #define BS 2
@@ -234,12 +234,12 @@ void pulse(int pin, int del) {
 
 void testDecimalDecoder() {
   pinMode(REGISTER_IN, OUTPUT);
-  pinMode(REGISTER_SIGN, OUTPUT);
-  pinMode(REGISTER_HEX, OUTPUT);
+  pinMode(REGISTER_CS1, OUTPUT);
+  pinMode(REGISTER_CS2, OUTPUT);
   pinMode(REGISTER_CLK, OUTPUT);
   digitalWrite(REGISTER_IN, HIGH);
-  digitalWrite(REGISTER_HEX, LOW);
-  digitalWrite(REGISTER_SIGN, LOW);
+  digitalWrite(REGISTER_CS2, LOW);
+  digitalWrite(REGISTER_CS1, LOW);
   digitalWrite(REGISTER_CLK, LOW);
   
   Serial.println("Testing Decoder...");
@@ -251,7 +251,7 @@ void testDecimalDecoder() {
     delay(RATE);
   }
   Serial.println("Testing Sign Decimal...");
-  digitalWrite(REGISTER_SIGN, HIGH);
+  digitalWrite(REGISTER_CS1, HIGH);
   for (int value = 0; value <= 255; value += 1) {
 //    Serial.println(value);
     setData((byte)value);
@@ -259,8 +259,8 @@ void testDecimalDecoder() {
     delay(RATE);
   }
   Serial.println("Testing Hex...");
-  digitalWrite(REGISTER_SIGN, LOW);
-  digitalWrite(REGISTER_HEX, HIGH);
+  digitalWrite(REGISTER_CS1, LOW);
+  digitalWrite(REGISTER_CS2, HIGH);
   for (int value = 0; value <= 255; value += 1) {
 //    Serial.println(value, HEX);
     setData(value);
@@ -268,18 +268,58 @@ void testDecimalDecoder() {
     delay(RATE);
   }
   Serial.println("Testing Sign Hex...");
-  digitalWrite(REGISTER_SIGN, HIGH);
+  digitalWrite(REGISTER_CS1, HIGH);
   for (int value = 0; value <= 255; value += 1) {
 //    Serial.println(value, HEX);
     setData(value);
     pulse(REGISTER_CLK, 1);
     delay(RATE);
   }
+  Serial.println("Done.");
 }
 
+void testCounter() {
+  pinMode(REGISTER_IN, OUTPUT);
+  pinMode(REGISTER_CS1, OUTPUT);
+  pinMode(REGISTER_CS2, OUTPUT);
+  pinMode(REGISTER_CLK, OUTPUT);
+  digitalWrite(REGISTER_IN, HIGH);
+  digitalWrite(REGISTER_CS2, HIGH);
+  digitalWrite(REGISTER_CS1, HIGH);
+  digitalWrite(REGISTER_CLK, LOW);
+
+  Serial.println("Testing Load counter...");
+  for (int value = 0; value <= 255; value += 1) {
+//    Serial.println(value, HEX);
+    setData(value);
+    pulse(REGISTER_CLK, 1);
+    delay(RATE);
+  }
+  Serial.println("Testing counter +...");
+  digitalWrite(REGISTER_IN, LOW);
+  digitalWrite(REGISTER_CS1, HIGH);
+  digitalWrite(REGISTER_CS2, LOW);
+  setData(0);
+  for (int value = 0; value <= 255; value += 1) {
+//    Serial.println(value, HEX);
+    pulse(REGISTER_CLK, 1);
+    delay(RATE);
+  }
+  Serial.println("Testing counter -...");
+  digitalWrite(REGISTER_CS1, LOW);
+  digitalWrite(REGISTER_CS2, LOW);
+  setData(255);
+  for (int value = 0; value <= 255; value += 1) {
+//    Serial.println(value, HEX);
+    pulse(REGISTER_CLK, 1);
+    delay(RATE);
+  }
+  Serial.println("Done.");
+}
 void setup() {
   Serial.begin(9600);
-  testDecimalDecoder();
+  //testDecimalDecoder();
+  testCounter();
 
   //decoder();
   // Read and print out the contents of the EERPROM
