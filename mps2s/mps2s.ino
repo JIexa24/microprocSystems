@@ -61,7 +61,7 @@ volatile uint8_t slave_addr;
 
 int aref = 1;
 int dca_state = 0;
-
+int i2c_addr = 1;
 uint8_t slave_data[13][4] = {{0x1, 0xA, 0xA1, 0xBA},
                        {0x2, 0x9, 0xB2, 0xFF},
                        {0x3, 0x8, 0xC3, 0xBB},
@@ -90,6 +90,11 @@ void setup() {
     while(1);*/
     slave();
   #endif  
+}
+
+int i2c_testaddr(int addr) {
+  if (i2c_writeTo(addr, NULL, 0, 1, 1) == 0) return 1;
+  else return 0;  
 }
 
 void dca_init() {
@@ -162,6 +167,12 @@ void master() {
       dca_table[i + 12], dca_table[i + 13], dca_table[i + 14], dca_table[i + 15]);
     usart_sendsln(buf);
   }
+  for (i = 1; i < 128; ++i) {
+    if (i2c_testaddr(i)) { 
+      i2c_addr = i;
+      break; 
+    }
+  }
   dWrite(SIGNAL_PIN_I2C, HIGH);
   while (1) {
     if (dRead(TRANSMIT_READ_PIN_I2C) == HIGH) { 
@@ -174,9 +185,9 @@ void master() {
         if (data[0] == SLAVE_DATA_ROM_ADDR) {
           rom_no[0] = data[0];
           rom_no[1] = 0x0;
-          i2c_requestFrom(1, rom_no, 8, 1);
+          i2c_requestFrom(i2c_addr, rom_no, 8, 1);
         } else 
-          i2c_requestFrom(1, data, 4, 1);
+          i2c_requestFrom(i2c_addr, data, 4, 1);
         if (data[0] == SLAVE_DATA_STOP_READ_ADDR) {
           sprintf(buf,"addr: %02d | %02x %02x %02x %02x",data[0], data[2], data[3], data[4], data[5]);
           usart_sendsln(buf);
@@ -220,7 +231,7 @@ void master() {
       data[5] = usart_parseInt();
       sprintf(buf,"addr: %02d | %02x %02x %02x %02x", data[0], data[2], data[3], data[4], data[5]);
       if (SLAVE_DATA_START_WRITE_ADDR <= data[0] && data[0] <= SLAVE_DATA_STOP_WRITE_ADDR){
-        i2c_writeTo(1, data, 6, 1, 1);
+        i2c_writeTo(i2c_addr, data, 6, 1, 1);
         sprintf(buf,"addr: %02d | %02x %02x %02x %02x", data[0], data[2], data[3], data[4], data[5]);
         usart_sendsln(buf);
       } else {
@@ -672,9 +683,7 @@ void i2c_releaseBus() {
 void i2c_stopCond() {
   TWCR = _BV(TWEN) | _BV(TWIE) | _BV(TWEA) | _BV(TWINT) | _BV(TWSTO);
   
-  while(TWCR & _BV(TWSTO)){
-    continue;
-  }
+  while(TWCR & _BV(TWSTO));
   
   i2c_state = I2C_READY;
 }
@@ -769,9 +778,6 @@ uint8_t i2c_writeTo(uint8_t address, uint8_t* data, uint8_t length, uint8_t wait
   i2c_slarw = TW_WRITE;
   i2c_slarw |= address << 1;
   
-  // if we're in a repeated start, then we've already sent the START
-  // in the ISR. Don't do it again.
-  //
   if (true == i2c_inRepStart) {
     i2c_inRepStart = false;   
     do {
@@ -879,7 +885,6 @@ ISR(TWI_vect) {
     case TW_MR_SLA_NACK: // address sent, nack received
       i2c_stopCond();
       break;
-    // TW_MR_ARB_LOST handled by TW_MT_ARB_LOST case
 
     // Slave Receiver
     case TW_SR_SLA_ACK:   // addressed, returned ack
@@ -940,8 +945,8 @@ ISR(TWI_vect) {
         i2c_replyack(0);
       }
       break;
-    case TW_ST_DATA_NACK: // received nack, we are done 
-    case TW_ST_LAST_DATA: // received ack, but we are done already!
+    case TW_ST_DATA_NACK: // received nack
+    case TW_ST_LAST_DATA: // received ack
       // ack future responses
       i2c_replyack(1);
       // leave slave receiver state
@@ -951,7 +956,7 @@ ISR(TWI_vect) {
     // All
     case TW_NO_INFO:   // no state information
       break;
-    case TW_BUS_ERROR: // bus error, illegal stop/start
+    case TW_BUS_ERROR: // bus error
       i2c_error = TW_BUS_ERROR;
       i2c_stopCond();
       break;
