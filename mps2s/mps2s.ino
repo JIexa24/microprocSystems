@@ -128,7 +128,6 @@ void master() {
   int addr = 0;
   int dca_table[256];
   int i;
-  usart_init(9600);
   pMode(SCL_PIN, OUTPUT);
   pMode(SDA_PIN, INPUT);
   
@@ -149,30 +148,23 @@ void master() {
   dWrite(DCA_CLK_DPIN_SH, LOW);
   dWrite(DCA_LATCH_DPIN_SH, LOW);
   dca_init();
+  
+  usart_init(9600);
+  ADCSRA = _BV(ADEN) | _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0);
+
+  for (i = 0; i < 256; ++i) {
+    dca_write(i);
+    delay(10);
+    dca_table[i] = aRead(P_A0_T);
+    usart_sendln(dca_table[i]);    
+  }
+  dca_write(0);
+    delay(1000);
   i2c_init(0);
   usart_sendsln("Ready");
   usart_sends("AnalogLevel A0 - ");
   usart_sendln(aRead(P_A0_T));
-  ADCSRA = _BV(ADEN) | _BV(ADPS2) | _BV(ADPS1) | _BV(ADPS0);
-  for (i = 0; i < 256; ++i) {
-    dca_write(i);
-    delay(50);
-    dca_table[i] = aRead(P_A0_T);
-  }
-  dca_write(0);
-  for (i = 0; i < 256; i += 16) {
-    sprintf(buf, "%04d %04d %04d %04d %04d %04d %04d %04d %04d %04d %04d %04d %04d %04d %04d %04d", dca_table[i], dca_table[i + 1], dca_table[i + 2], dca_table[i + 3],
-      dca_table[i + 4], dca_table[i + 5], dca_table[i + 6], dca_table[i + 7],
-      dca_table[i + 8], dca_table[i + 9], dca_table[i + 10], dca_table[i + 11],
-      dca_table[i + 12], dca_table[i + 13], dca_table[i + 14], dca_table[i + 15]);
-    usart_sendsln(buf);
-  }
-  for (i = 1; i < 128; ++i) {
-    if (i2c_testaddr(i)) { 
-      i2c_addr = i;
-      break; 
-    }
-  }
+  usart_sendsln(" ");
   dWrite(SIGNAL_PIN_I2C, HIGH);
   while (1) {
     if (dRead(TRANSMIT_READ_PIN_I2C) == HIGH) { 
@@ -262,29 +254,59 @@ void slave() {
   
   lcd1602_init();
   i2c_init(1);
-
-  byte i;
+  usart_init(9600);
+  int j,i;
   byte addr[8];
-  byte count = 5;
-
+  char buf[256];
+  byte count = 10;
+  byte data[12];
   uint8_t rom_no[8] = {0};
-  while(1){
-    if (count == 5) {
-      for (i = 0; i < 4; ++i){ 
-        slave_data[10][i] = 0;
-        slave_data[11][i] = 0;
-        slave_data[12][i] = 0;
-      }
-      for (i = 0; i < 8; ++i){
-        rom_no[i] = 0;
-      }
-      count = 0;
-      while(!search_1wire(rom_no, DS18B20_PIN));
-      for(i = 0; i < 8; ++i) {
-        slave_data[SLAVE_DATA_ROM_ADDR + i / 4][i % 4] = rom_no[i];
-      }
-    }
+  float celsius, fahrenheit;
+
+  sprintf(buf, "R9ODT");
+  lcd1602_sendstr(buf, 5, 1, 0);
+  while(!search_1wire(rom_no, DS18B20_PIN));
+  
+  for(i = 0, j = 7; i < 8; ++i, --j) { 
+    slave_data[SLAVE_DATA_ROM_ADDR + i / 4][i % 4] = rom_no[j];
+  }
+  
+  while(1){   
+    //calculating temperature
+    reset_1wire(DS18B20_PIN);
+    //select_rom_1wire(rom_no, DS18B20_PIN);
+    skip_rom_1wire(DS18B20_PIN);
+    write_1wire(DS18B20_ST, 1, DS18B20_PIN);
     delay(1000);
+    reset_1wire(DS18B20_PIN);
+    //select_rom_1wire(rom_no, DS18B20_PIN);
+    skip_rom_1wire(DS18B20_PIN);
+    write_1wire(0xBE, 1, DS18B20_PIN);
+    for ( i = 0; i < 9; i++) {              
+      data[i] = read_1wire(DS18B20_PIN);
+    }  
+ // sprintf(buf,"%02x %02x %02x %02x %02x %02x %02x %02x", rom_no[7], rom_no[6], rom_no[5], rom_no[4], rom_no[3], rom_no[2], rom_no[1], rom_no[0]); usart_sendsln(buf);
+ // sprintf(buf,"%02x %02x %02x %02x %02x %02x %02x %02x %02x", data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7], data[8]); usart_sendsln(buf);
+
+    int16_t raw = (data[1] << 8) | data[0]; 
+      if (data[7] == 0x10) {
+      raw = (raw & 0xFFF0) + 12 - data[6];
+    } else {
+      byte cfg =  (data[4] & 0x60);
+      if (cfg == 0x00) 
+        raw = raw << 3; 
+      else if  (cfg == 0x20) 
+        raw = raw << 2; 
+      else if  (cfg == 0x40) 
+        raw = raw << 1;
+    }  
+    celsius =  (float)raw / 16.0;
+    fahrenheit = celsius * 1.8 + 32.0; 
+    slave_data[10][0] = (unsigned int)celsius >> 8 & 0xFF;
+    slave_data[10][1] = (unsigned int)celsius & 0xFF;
+    slave_data[10][2] = (unsigned int)fahrenheit >> 8 & 0xFF;
+    slave_data[10][3] = (unsigned int)fahrenheit & 0xFF;
+   
     ++count;
   }
 }
@@ -570,53 +592,15 @@ void i2c_requestFrom(uint8_t address, uint8_t* data, int bytes, int sendStop){
 void onRequestService(){
   char buff[128];
   byte i;
-  byte data[12];
-  byte rom_no[8];
-  float celsius, fahrenheit;
-  sprintf(buff, "Request: %02d", slave_addr);
-  lcd1602_sendstr(buff, 11, 1, 0);
   if (SLAVE_DATA_START_READ_ADDR <= slave_addr && slave_addr <= SLAVE_DATA_STOP_READ_ADDR) {
+    sprintf(buff, "Request: %02d", slave_addr);
+    lcd1602_sendstr(buff, 11, 1, 0);
     sprintf(buff, "An: %02x %02x %02x %02x", slave_data[slave_addr][0], slave_data[slave_addr][1], slave_data[slave_addr][2], slave_data[slave_addr][3]);
     lcd1602_sendstr(buff, 15, 2, 0);
     int res = i2c_transmit(slave_data[slave_addr], 4);
   } else {
     sprintf(buff, "Request: ROM");
     lcd1602_sendstr(buff, 12, 1, 0);
-    //calculating temperature
-    for(i = 0; i < 8; ++i) {
-      rom_no[i] = slave_data[SLAVE_DATA_ROM_ADDR + i / 4][i % 4];
-    }
-    reset_1wire(DS18B20_PIN);
-    select_rom_1wire(rom_no, DS18B20_PIN);
-//    skip_rom_1wire(DS18B20_PIN);
-    write_1wire(DS18B20_ST, 1, DS18B20_PIN);
-    delay(1000);
-    reset_1wire(DS18B20_PIN);
-    select_rom_1wire(rom_no, DS18B20_PIN);
-//    skip_rom_1wire(DS18B20_PIN);
-    write_1wire(0xBE, 1, DS18B20_PIN);
-    for (i = 0; i < 9; i++) {              
-      data[i] = read_1wire(DS18B20_PIN); 
-    }  
-    int16_t raw = (data[1] << 8) | data[0]; 
-      if (data[7] == 0x10) {
-      raw = (raw & 0xFFF0) + 12 - data[6];
-    } else {
-      byte cfg =  (data[4] & 0x60);
-      if (cfg == 0x00) 
-        raw = raw << 3; 
-      else if  (cfg == 0x20) 
-        raw = raw << 2; 
-      else if  (cfg == 0x40) 
-        raw = raw << 1;
-    }  
-    celsius =  (float)raw / 16.0;
-    fahrenheit = celsius * 1.8 + 32.0; 
-    slave_data[10][0] = (unsigned int)celsius >> 8 & 0xFF;
-    slave_data[10][1] = (unsigned int)celsius & 0xFF;
-    slave_data[10][2] = (unsigned int)fahrenheit >> 8 & 0xFF;
-    slave_data[10][3] = (unsigned int)fahrenheit & 0xFF;
-    
     sprintf(buff, "%02x%02x%02x%02x%02x%02x%02x%02x", slave_data[11][0], slave_data[11][1], slave_data[11][2], slave_data[11][3], slave_data[12][0], slave_data[12][1], slave_data[12][2], slave_data[12][3]);
     lcd1602_sendstr(buff, 16, 2, 0);
     int res = i2c_transmit(slave_data[11], 8);
