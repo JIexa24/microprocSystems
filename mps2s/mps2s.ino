@@ -474,9 +474,9 @@ uint8_t reset_1wire(int pin)
   cli();
   dWrite(pin, LOW);
   pMode(pin, OUTPUT);  // drive output low
-  sei();
+//  sei();
   delayMicroseconds(480);
-  cli();
+//  cli();
   pMode(pin, INPUT); // allow it to float
   delayMicroseconds(70);
   r = !(dRead(pin));
