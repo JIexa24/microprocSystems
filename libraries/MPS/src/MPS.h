@@ -182,12 +182,11 @@
 
 #define FREQ_CORE F_CPU
 // Count of 1 microseconds ~1/16microsec
-#define FREQ_PER_MS() ( FREQ_CORE / 1000000UL )
+#define FREQ_PER_MS() (FREQ_CORE / 1000000UL)
 // Overflow Timing in microseconds
-#define FREQ_TO_MS(X) ( (X) / FREQ_PER_MS() )
+#define FREQ_TO_MS(X) ((X) / FREQ_PER_MS())
 // Count to overflow
-#define COUNT_TIMER1 ( 256 )
-#define COUNT_TIMER ( 240 )
+#define COUNT_TIMER0 (256)
 
 // 1.024 milliseconds to overflow
 #define MS_TIMER1_OVERFLOW (FREQ_TO_MS(64 * COUNT_TIMER1 )) 
